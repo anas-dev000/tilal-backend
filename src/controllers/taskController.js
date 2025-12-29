@@ -888,7 +888,7 @@ export const markSatisfied = async (req, res) => {
       });
     }
 
-    if (req.user.role === "client" && task.client.toString() !== req.user.id) {
+    if (req.user.role !== "client" && task.client.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: "Not authorized",
