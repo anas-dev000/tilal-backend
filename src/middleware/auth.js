@@ -169,3 +169,25 @@ export const optionalAuth = async (req, res, next) => {
     next();
   }
 };
+
+/**
+ * Accountant & Admin middleware - ensures only accountants or admins can access
+ * Allows admins to view financial stats while maintaining primary accountant access
+ */
+export const accountantOnly = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Not authenticated'
+    });
+  }
+
+  if (req.user.role !== 'accountant' && req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access restricted to accountants and admins only'
+    });
+  }
+
+  next();
+};

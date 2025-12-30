@@ -1,5 +1,6 @@
 import Site from "../models/Site.js";
 import Client from "../models/Client.js";
+import { notifyNewSite } from "../services/notificationService.js";
 import { v2 as cloudinary } from "cloudinary";
 import mongoose from "mongoose";
 
@@ -193,6 +194,11 @@ export const createSite = async (req, res) => {
       "client",
       "name email phone"
     );
+
+    // Notify Accountants
+    if (populatedSite.client) {
+        await notifyNewSite(populatedSite, populatedSite.client);
+    }
 
     res.status(201).json({
       success: true,

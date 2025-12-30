@@ -1,19 +1,21 @@
 import Invoice from '../models/Invoice.js';
-import Task from '../models/Task.js';
+import Site from '../models/Site.js';
 import Client from '../models/Client.js';
-import { generateInvoicePDF } from '../services/pdfService.js';
+import { notifyInvoice } from '../services/notificationService.js';
 
 /**
- * @desc    Get all invoices
+ * @desc    Get all invoices with filters
  * @route   GET /api/v1/invoices
- * @access  Private (Admin)
+ * @access  Private (Admin only)
  */
 export const getInvoices = async (req, res) => {
   try {
     const {
-      client,
-      status,
       paymentStatus,
+      client,
+      site,
+      startDate,
+      endDate,
       page = 1,
       limit = 20,
       sort = '-createdAt'
@@ -21,21 +23,21 @@ export const getInvoices = async (req, res) => {
 
     const query = {};
 
-    if (client) {
-      query.client = client;
-    }
-
-    if (status) {
-      query.status = status;
-    }
-
-    if (paymentStatus) {
-      query.paymentStatus = paymentStatus;
+    // Apply filters
+    if (paymentStatus) query.paymentStatus = paymentStatus;
+    if (client) query.client = client;
+    if (site) query.site = site;
+    
+    if (startDate || endDate) {
+      query.createdAt = {};
+      if (startDate) query.createdAt.$gte = new Date(startDate);
+      if (endDate) query.createdAt.$lte = new Date(endDate);
     }
 
     const invoices = await Invoice.find(query)
       .populate('client', 'name email phone')
-      .populate('task', 'title status')
+      .populate('site', 'name location')
+      .populate('task', 'title')
       .sort(sort)
       .limit(limit * 1)
       .skip((page - 1) * limit)
@@ -62,15 +64,16 @@ export const getInvoices = async (req, res) => {
 };
 
 /**
- * @desc    Get single invoice
+ * @desc    Get invoice by ID
  * @route   GET /api/v1/invoices/:id
  * @access  Private
  */
-export const getInvoice = async (req, res) => {
+export const getInvoiceById = async (req, res) => {
   try {
     const invoice = await Invoice.findById(req.params.id)
       .populate('client', 'name email phone address')
-      .populate('task', 'title description category status cost images');
+      .populate('site', 'name location paymentCycle')
+      .populate('task', 'title description');
 
     if (!invoice) {
       return res.status(404).json({
@@ -94,57 +97,64 @@ export const getInvoice = async (req, res) => {
 };
 
 /**
- * @desc    Create invoice
+ * @desc    Create invoice with PDF upload
  * @route   POST /api/v1/invoices
- * @access  Private (Admin)
+ * @access  Private (Admin only)
  */
 export const createInvoice = async (req, res) => {
   try {
-    const { task: taskId, selectedImages } = req.body;
+    const invoiceData = req.body;
 
-    const task = await Task.findById(taskId)
-      .populate('client')
-      .populate('worker', 'name');
+    // Handle PDF upload from Cloudinary
+    if (req.file && req.file.cloudinaryUrl) {
+      invoiceData.pdfFile = {
+        url: req.file.cloudinaryUrl,
+        cloudinaryId: req.file.cloudinaryId,
+        uploadedAt: new Date()
+      };
+      invoiceData.pdfUrl = req.file.cloudinaryUrl;
+    }
 
-    if (!task) {
-      return res.status(404).json({
+    // Validate that either site or task is provided
+    if (!invoiceData.site && !invoiceData.task) {
+      return res.status(400).json({
         success: false,
-        message: 'Task not found'
+        message: 'Either site or task is required'
       });
     }
 
-    const count = await Invoice.countDocuments();
-    const invoiceNumber = `INV-${Date.now()}-${count + 1}`;
-
-    const totalAmount = task.cost?.total || 0;
-
-    const invoiceData = {
-      ...req.body,
-      invoiceNumber,
-      client: task.client._id,
-      task: taskId,
-      totalAmount
-    };
+    // If site is provided, get client from site
+    if (invoiceData.site && !invoiceData.client) {
+      const site = await Site.findById(invoiceData.site);
+      if (site) {
+        invoiceData.client = site.client;
+      }
+    }
 
     const invoice = await Invoice.create(invoiceData);
 
-    const pdfPath = await generateInvoicePDF(
-      invoice,
-      task,
-      task.client,
-      selectedImages || []
-    );
+    // Update site's last payment date if applicable
+    if (invoice.site && invoice.paymentStatus === 'paid') {
+      await Site.findByIdAndUpdate(invoice.site, {
+        lastPaymentDate: new Date()
+      });
+    }
 
-    invoice.pdfUrl = pdfPath.replace(/\\/g, '/').split('uploads/')[1];
-    await invoice.save();
+    // Notify Client
+    const client = await Client.findById(invoice.client);
+    if (client) {
+        await notifyInvoice(client, invoice, invoice.pdfUrl);
+    }
 
-    task.invoice = invoice._id;
-    await task.save();
+    const populatedInvoice = await Invoice.findById(invoice._id)
+      .populate('client', 'name email phone')
+      .populate('site', 'name location paymentCycle')
+      .populate('task', 'title');
 
     res.status(201).json({
       success: true,
       message: 'Invoice created successfully',
-      data: invoice
+      data: populatedInvoice
     });
   } catch (error) {
     console.error('Create invoice error:', error);
@@ -159,13 +169,11 @@ export const createInvoice = async (req, res) => {
 /**
  * @desc    Update invoice
  * @route   PUT /api/v1/invoices/:id
- * @access  Private (Admin)
+ * @access  Private (Admin only)
  */
 export const updateInvoice = async (req, res) => {
   try {
-    let invoice = await Invoice.findById(req.params.id)
-      .populate('task')
-      .populate('client');
+    let invoice = await Invoice.findById(req.params.id);
 
     if (!invoice) {
       return res.status(404).json({
@@ -174,30 +182,26 @@ export const updateInvoice = async (req, res) => {
       });
     }
 
-    const { selectedImages, regeneratePDF } = req.body;
+    const updateData = req.body;
+
+    // Handle new PDF upload
+    if (req.file && req.file.cloudinaryUrl) {
+      updateData.pdfFile = {
+        url: req.file.cloudinaryUrl,
+        cloudinaryId: req.file.cloudinaryId,
+        uploadedAt: new Date()
+      };
+      updateData.pdfUrl = req.file.cloudinaryUrl;
+    }
 
     invoice = await Invoice.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       {
         new: true,
         runValidators: true
       }
-    ).populate('task').populate('client');
-
-    if (regeneratePDF) {
-      const task = await Task.findById(invoice.task._id);
-      
-      const pdfPath = await generateInvoicePDF(
-        invoice,
-        task,
-        invoice.client,
-        selectedImages || []
-      );
-
-      invoice.pdfUrl = pdfPath.replace(/\\/g, '/').split('uploads/')[1];
-      await invoice.save();
-    }
+    ).populate('client site task');
 
     res.status(200).json({
       success: true,
@@ -217,7 +221,7 @@ export const updateInvoice = async (req, res) => {
 /**
  * @desc    Delete invoice
  * @route   DELETE /api/v1/invoices/:id
- * @access  Private (Admin)
+ * @access  Private (Admin only)
  */
 export const deleteInvoice = async (req, res) => {
   try {
@@ -247,58 +251,179 @@ export const deleteInvoice = async (req, res) => {
 };
 
 /**
- * @desc    Update payment status
- * @route   PUT /api/v1/invoices/:id/payment-status
- * @access  Private (Admin)
+ * @desc    Get invoice statistics for dashboard
+ * @route   GET /api/v1/invoices/stats
+ * @access  Private (Admin only)
  */
-export const updatePaymentStatus = async (req, res) => {
+export const getInvoiceStats = async (req, res) => {
   try {
-    const { paymentStatus, paymentMethod, paidAmount, paymentDate } = req.body;
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth();
 
-    const invoice = await Invoice.findById(req.params.id);
-
-    if (!invoice) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invoice not found'
-      });
-    }
-
-    invoice.paymentStatus = paymentStatus;
+    // Start of current month
+    const startOfMonth = new Date(currentYear, currentMonth, 1);
     
-    if (paymentMethod) {
-      invoice.paymentMethod = paymentMethod;
-    }
+    // Start of current year
+    const startOfYear = new Date(currentYear, 0, 1);
 
-    if (paidAmount !== undefined) {
-      invoice.paidAmount = paidAmount;
-    }
-
-    if (paymentDate) {
-      invoice.paidAt = paymentDate;
-    }
-
-    if (paymentStatus === 'paid') {
-      const client = await Client.findById(invoice.client);
-      if (client) {
-        client.paymentStatus = 'paid';
-        client.lastPaymentDate = new Date();
-        await client.save();
+    // Monthly stats
+    const monthlyInvoices = await Invoice.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfMonth }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: 1 },
+          totalAmount: { $sum: '$total' },
+          paidCount: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, 1, 0] }
+          },
+          paidAmount: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$total', 0] }
+          },
+          pendingCount: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', 'pending'] }, 1, 0] }
+          }
+        }
       }
-    }
+    ]);
 
-    await invoice.save();
+    // Yearly stats
+    const yearlyInvoices = await Invoice.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfYear }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalCount: { $sum: 1 },
+          totalAmount: { $sum: '$total' },
+          paidCount: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, 1, 0] }
+          },
+          paidAmount: {
+            $sum: { $cond: [{ $eq: ['$paymentStatus', 'paid'] }, '$total', 0] }
+          }
+        }
+      }
+    ]);
+
+    // Monthly breakdown for chart (last 12 months)
+    const monthlyBreakdown = await Invoice.aggregate([
+      {
+        $match: {
+          createdAt: {
+            $gte: new Date(currentYear, currentMonth - 11, 1)
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          count: { $sum: 1 },
+          total: { $sum: '$total' }
+        }
+      },
+      {
+        $sort: { '_id.year': 1, '_id.month': 1 }
+      }
+    ]);
 
     res.status(200).json({
       success: true,
-      message: 'Payment status updated successfully',
-      data: invoice
+      data: {
+        monthly: monthlyInvoices[0] || {
+          totalCount: 0,
+          totalAmount: 0,
+          paidCount: 0,
+          paidAmount: 0,
+          pendingCount: 0
+        },
+        yearly: yearlyInvoices[0] || {
+          totalCount: 0,
+          totalAmount: 0,
+          paidCount: 0,
+          paidAmount: 0
+        },
+        monthlyBreakdown
+      }
     });
   } catch (error) {
-    console.error('Update payment status error:', error);
+    console.error('Get invoice stats error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update payment status',
+      message: 'Failed to fetch invoice statistics',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * @desc    Get payment alerts (upcoming and overdue)
+ * @route   GET /api/v1/invoices/payment-alerts
+ * @access  Private (Admin only)
+ */
+export const getPaymentAlerts = async (req, res) => {
+  try {
+    const currentDate = new Date();
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+    // Find all sites with payment cycles
+    const sites = await Site.find({
+      isActive: true,
+      nextPaymentDate: { $exists: true, $ne: null }
+    })
+      .populate('client', 'name email phone')
+      .lean();
+
+    const alerts = {
+      overdue: [],
+      upcoming: [],
+      upToDate: []
+    };
+
+    sites.forEach(site => {
+      if (!site.nextPaymentDate) return;
+
+      const nextPayment = new Date(site.nextPaymentDate);
+      
+      if (nextPayment < currentDate) {
+        // Overdue
+        alerts.overdue.push({
+          ...site,
+          daysOverdue: Math.floor((currentDate - nextPayment) / (1000 * 60 * 60 * 24))
+        });
+      } else if (nextPayment <= sevenDaysFromNow) {
+        // Due within 7 days
+        alerts.upcoming.push({
+          ...site,
+          daysUntilDue: Math.floor((nextPayment - currentDate) / (1000 * 60 * 60 * 24))
+        });
+      } else {
+        // Up to date
+        alerts.upToDate.push(site);
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      data: alerts
+    });
+  } catch (error) {
+    console.error('Get payment alerts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment alerts',
       error: error.message
     });
   }
@@ -306,9 +431,10 @@ export const updatePaymentStatus = async (req, res) => {
 
 export default {
   getInvoices,
-  getInvoice,
+  getInvoiceById,
   createInvoice,
   updateInvoice,
   deleteInvoice,
-  updatePaymentStatus
+  getInvoiceStats,
+  getPaymentAlerts
 };

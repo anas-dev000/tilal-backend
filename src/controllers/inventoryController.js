@@ -251,12 +251,9 @@ export const withdrawInventory = async (req, res) => {
 
       // Send alert only once per day
       if (!lastAlert || (now - lastAlert) > 24 * 60 * 60 * 1000) {
-        const admin = await User.findOne({ role: 'admin', isActive: true });
-        if (admin) {
-          await notifyLowStock(admin, item);
-          item.lowStockAlert.lastAlertSent = now;
-          await item.save();
-        }
+        await notifyLowStock(item);
+        item.lowStockAlert.lastAlertSent = now;
+        await item.save();
       }
     }
 

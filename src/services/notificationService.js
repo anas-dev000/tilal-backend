@@ -1,4 +1,5 @@
 import Notification from '../models/Notification.js';
+import { emitToUser } from '../config/socket.js';
 import {
   sendTaskAssignmentEmail,
   sendTaskCompletionEmail,
@@ -13,16 +14,27 @@ import {
   sendInvoiceWhatsApp,
   sendClientCredentialsWhatsApp
 } from './whatsappService.js';
+import User from '../models/User.js';
 
 /**
- * Create notification in database
+ * Create notification in database and emit via socket
  */
 const createNotification = async (data) => {
   try {
     const notification = await Notification.create(data);
+    
+    // Emit real-time notification via Socket.io
+    if (notification && notification.recipient) {
+      const recipientId = notification.recipient.id || notification.recipient;
+      emitToUser(recipientId, 'new_notification', notification);
+    }
+    
     return notification;
   } catch (error) {
-    console.error('Create notification error:', error);
+    console.error('❌ Create notification error:', error);
+    if (error.name === 'ValidationError') {
+      console.error('Validation details:', Object.keys(error.errors).map(key => `${key}: ${error.errors[key].message}`));
+    }
     return null;
   }
 };
@@ -32,21 +44,24 @@ const createNotification = async (data) => {
  */
 export const notifyTaskAssignment = async (worker, task, client) => {
   try {
-    // Create in-app notification
-    await createNotification({
-      recipient: worker._id,
-      type: 'task_assigned',
-      title: 'New Task Assigned',
+    const safePriority = ['low', 'medium', 'high'].includes(task.priority) ? task.priority : 'medium';
+
+    // 1. Create in-app notification
+    const notification = await createNotification({
+      recipient: { type: 'User', id: worker._id },
+      type: 'task-assigned',
+      subject: 'New Task Assigned',
       message: `You have been assigned a new task: ${task.title}`,
-      relatedTask: task._id,
-      priority: task.priority
+      channel: 'both',
+      data: { relatedTask: task._id },
+      priority: safePriority
     });
 
-    // Send email
-    await sendTaskAssignmentEmail(worker, task, client);
-
-    // Send WhatsApp
-    await sendTaskAssignmentWhatsApp(worker, task, client);
+    // 2. Send email/WhatsApp in background
+    if (notification) {
+      sendTaskAssignmentEmail(worker, task, client).catch(e => console.error('Email error:', e));
+      sendTaskAssignmentWhatsApp(worker, task, client).catch(e => console.error('WhatsApp error:', e));
+    }
 
     return true;
   } catch (error) {
@@ -60,22 +75,48 @@ export const notifyTaskAssignment = async (worker, task, client) => {
  */
 export const notifyTaskCompletion = async (client, task, worker) => {
   try {
-    // Create in-app notification
-    await createNotification({
-      recipient: client._id,
-      recipientModel: 'Client',
-      type: 'task_completed',
-      title: 'Task Completed',
+    // 1. Notify Client (App + Email)
+    createNotification({
+      recipient: { type: 'Client', id: client._id },
+      type: 'task-completed',
+      subject: 'Task Completed',
       message: `Your task "${task.title}" has been completed`,
-      relatedTask: task._id,
+      channel: 'both',
+      data: { relatedTask: task._id },
       priority: 'medium'
+    }).then(notif => {
+       if (notif) {
+         sendTaskCompletionEmail(client, task, worker).catch(e => console.error('Client email error:', e));
+       }
     });
 
-    // Send email
-    await sendTaskCompletionEmail(client, task, worker);
+    // 2. Notify Admins (App only)
+    const admins = await User.find({ role: 'admin', isActive: true });
+    admins.forEach(admin => {
+      createNotification({
+        recipient: { type: 'User', id: admin._id },
+        type: 'task-completed',
+        subject: 'Task Completed',
+        message: `${worker.name} completed task: ${task.title}`,
+        channel: 'email', // In-app + Email channel requested by logic
+        data: { relatedTask: task._id },
+        priority: 'low'
+      });
+    });
 
-    // Send WhatsApp
-    await sendTaskCompletionWhatsApp(client, task, worker);
+    // 3. Notify Accountants (App only)
+    const accountants = await User.find({ role: 'accountant', isActive: true });
+    accountants.forEach(accountant => {
+      createNotification({
+        recipient: { type: 'User', id: accountant._id },
+        type: 'task-completed',
+        subject: 'Task Ready for Billing',
+        message: `Task "${task.title}" for ${client.name} is completed and ready for invoice generation`,
+        channel: 'email',
+        data: { relatedTask: task._id, clientId: client._id },
+        priority: 'medium'
+      });
+    });
 
     return true;
   } catch (error) {
@@ -85,26 +126,94 @@ export const notifyTaskCompletion = async (client, task, worker) => {
 };
 
 /**
- * Send low stock alert
+ * Send feedback notification
  */
-export const notifyLowStock = async (adminUser, item) => {
+export const notifyFeedback = async (task, feedback, client) => {
   try {
-    // Create in-app notification
-    await createNotification({
-      recipient: adminUser._id,
-      type: 'low_stock',
-      title: 'Low Stock Alert',
-      message: `${item.name} is running low (${item.quantity.current} ${item.unit} remaining)`,
-      priority: 'high'
+    // 1. Notify Admins
+    const admins = await User.find({ role: 'admin', isActive: true });
+    admins.forEach(admin => {
+      createNotification({
+        recipient: { type: 'User', id: admin._id },
+        type: 'feedback-received',
+        subject: 'New Feedback Received',
+        message: `${client.name} provided ${feedback.rating}★ feedback for task: ${task.title}`,
+        channel: 'email',
+        data: { relatedTask: task._id, rating: feedback.rating },
+        priority: feedback.rating <= 2 ? 'high' : 'medium'
+      });
     });
 
-    // Send email
-    await sendLowStockAlert(adminUser.email, item);
-
-    // Send WhatsApp
-    if (adminUser.phone) {
-      await sendLowStockWhatsApp(adminUser.phone, item);
+    // 2. Notify Worker
+    if (task.worker) {
+      const workerId = task.worker._id || task.worker;
+      createNotification({
+        recipient: { type: 'User', id: workerId },
+        type: 'feedback-received',
+        subject: 'You Received Feedback',
+        message: `Client gave you ${feedback.rating}★ for "${task.title}"`,
+        channel: 'email',
+        data: { relatedTask: task._id, rating: feedback.rating },
+        priority: 'medium'
+      });
     }
+
+    return true;
+  } catch (error) {
+    console.error('Notify feedback error:', error);
+    return false;
+  }
+};
+
+/**
+ * Notify Accountant about new Site/Client
+ */
+export const notifyNewSite = async (site, client) => {
+  try {
+    const accountants = await User.find({ role: 'accountant', isActive: true });
+    accountants.forEach(accountant => {
+      createNotification({
+        recipient: { type: 'User', id: accountant._id },
+        type: 'other',
+        subject: 'New Site Created',
+        message: `New site "${site.name}" created for ${client.name}. Please set up payment cycle.`,
+        channel: 'email',
+        data: { siteId: site._id, clientId: client._id },
+        priority: 'medium'
+      });
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Notify new site error:', error);
+    return false;
+  }
+};
+
+/**
+ * Send low stock alert to all admins
+ */
+export const notifyLowStock = async (item) => {
+  try {
+    const admins = await User.find({ role: 'admin', isActive: true });
+    
+    admins.forEach(admin => {
+      createNotification({
+        recipient: { type: 'User', id: admin._id },
+        type: 'low-stock',
+        subject: 'Low Stock Alert',
+        message: `${item.name} is running low (${item.quantity.current} ${item.unit} remaining)`,
+        channel: 'both',
+        priority: 'high'
+      }).then(notif => {
+        if (notif) {
+          sendLowStockAlert(admin.email, item).catch(err => console.error('Email alert error:', err));
+          if (admin.phone) {
+            sendLowStockWhatsApp(admin.phone, item).catch(err => console.error('WhatsApp alert error:', err));
+          }
+        }
+      });
+    });
 
     return true;
   } catch (error) {
@@ -118,22 +227,21 @@ export const notifyLowStock = async (adminUser, item) => {
  */
 export const notifyInvoice = async (client, invoice, pdfPath) => {
   try {
-    // Create in-app notification
-    await createNotification({
-      recipient: client._id,
-      recipientModel: 'Client',
-      type: 'invoice_generated',
-      title: 'Invoice Generated',
+    // 1. Create in-app notification
+    createNotification({
+      recipient: { type: 'Client', id: client._id },
+      type: 'invoice-generated',
+      subject: 'Invoice Generated',
       message: `Invoice ${invoice.invoiceNumber} has been generated`,
-      relatedInvoice: invoice._id,
+      channel: 'both',
+      data: { relatedInvoice: invoice._id },
       priority: 'medium'
+    }).then(notif => {
+      if (notif) {
+        sendInvoiceEmail(client, invoice, pdfPath).catch(e => console.error('Invoice email error:', e));
+        sendInvoiceWhatsApp(client, invoice).catch(e => console.error('Invoice WhatsApp error:', e));
+      }
     });
-
-    // Send email with PDF
-    await sendInvoiceEmail(client, invoice, pdfPath);
-
-    // Send WhatsApp
-    await sendInvoiceWhatsApp(client, invoice);
 
     return true;
   } catch (error) {
@@ -147,11 +255,9 @@ export const notifyInvoice = async (client, invoice, pdfPath) => {
  */
 export const notifyClientCredentials = async (client, username, temporaryPassword) => {
   try {
-    // Send email
-    await sendClientCredentials(client, username, temporaryPassword);
-
-    // Send WhatsApp
-    await sendClientCredentialsWhatsApp(client, username, temporaryPassword);
+    // Send email/WhatsApp in background
+    sendClientCredentials(client, username, temporaryPassword).catch(e => console.error('Credentials email error:', e));
+    sendClientCredentialsWhatsApp(client, username, temporaryPassword).catch(e => console.error('Credentials WhatsApp error:', e));
 
     return true;
   } catch (error) {
@@ -167,12 +273,12 @@ export const notifyPaymentReminder = async (client, invoice) => {
   try {
     // Create in-app notification
     await createNotification({
-      recipient: client._id,
-      recipientModel: 'Client',
-      type: 'payment_reminder',
-      title: 'Payment Reminder',
+      recipient: { type: 'Client', id: client._id },
+      type: 'other', 
+      subject: 'Payment Reminder',
       message: `Payment for invoice ${invoice.invoiceNumber} is due`,
-      relatedInvoice: invoice._id,
+      channel: 'both',
+      data: { relatedInvoice: invoice._id },
       priority: 'high'
     });
 
@@ -194,10 +300,10 @@ export const getUserNotifications = async (userId, options = {}) => {
       page = 1
     } = options;
 
-    const query = { recipient: userId };
+    const query = { 'recipient.id': userId };
     
     if (unreadOnly) {
-      query.isRead = false;
+      query.read = false;
     }
 
     const notifications = await Notification.find(query)
@@ -225,13 +331,10 @@ export const getUserNotifications = async (userId, options = {}) => {
  */
 export const markAsRead = async (notificationId) => {
   try {
-    await Notification.findByIdAndUpdate(notificationId, {
-      isRead: true,
-      readAt: new Date()
-    });
+    await Notification.findByIdAndDelete(notificationId);
     return true;
   } catch (error) {
-    console.error('Mark as read error:', error);
+    console.error('Delete on markAsRead error:', error);
     return false;
   }
 };
@@ -241,13 +344,10 @@ export const markAsRead = async (notificationId) => {
  */
 export const markAllAsRead = async (userId) => {
   try {
-    await Notification.updateMany(
-      { recipient: userId, isRead: false },
-      { isRead: true, readAt: new Date() }
-    );
+    await Notification.deleteMany({ 'recipient.id': userId });
     return true;
   } catch (error) {
-    console.error('Mark all as read error:', error);
+    console.error('Delete all on markAllAsRead error:', error);
     return false;
   }
 };
@@ -272,9 +372,10 @@ export default {
   notifyInvoice,
   notifyClientCredentials,
   notifyPaymentReminder,
+  notifyFeedback,
+  notifyNewSite,
   getUserNotifications,
   markAsRead,
   markAllAsRead,
   deleteNotification
 };
-
