@@ -9,7 +9,12 @@ const invoiceSchema = new mongoose.Schema({
   task: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Task',
-    required: true
+    required: false
+  },
+  site: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Site',
+    required: false
   },
   client: {
     type: mongoose.Schema.Types.ObjectId,
@@ -19,7 +24,7 @@ const invoiceSchema = new mongoose.Schema({
   branch: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Branch',
-    required: true
+    required: false
   },
   // Invoice Details
   items: [{
@@ -79,6 +84,14 @@ const invoiceSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  pdfFile: {
+    url: String,
+    cloudinaryId: String,
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
   // Notifications
   sentToClient: {
     email: {
@@ -113,9 +126,11 @@ invoiceSchema.pre('save', async function(next) {
     this.invoiceNumber = `INV-${year}${month}-${String(count + 1).padStart(5, '0')}`;
   }
   
-  // Calculate totals
-  this.tax.amount = (this.subtotal * this.tax.rate) / 100;
-  this.total = this.subtotal + this.tax.amount - this.discount;
+  // Calculate totals if subtotal is provided
+  if (this.subtotal) {
+    this.tax.amount = (this.subtotal * this.tax.rate) / 100;
+    this.total = this.subtotal + this.tax.amount - this.discount;
+  }
   
   next();
 });
@@ -123,10 +138,11 @@ invoiceSchema.pre('save', async function(next) {
 // Indexes
 invoiceSchema.index({ invoiceNumber: 1 });
 invoiceSchema.index({ client: 1 });
+invoiceSchema.index({ site: 1 });
 invoiceSchema.index({ task: 1 });
 invoiceSchema.index({ paymentStatus: 1 });
+invoiceSchema.index({ createdAt: -1 });
 
 const Invoice = mongoose.model('Invoice', invoiceSchema);
 
 export default Invoice;
-

@@ -1,4 +1,6 @@
 import express from "express";
+import { createServer } from "http";
+import { initSocket } from "./src/config/socket.js";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
@@ -21,6 +23,7 @@ import reportRoutes from "./src/routes/reportRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import siteRoutes from "./src/routes/siteRoutes.js";
+import accountantRoutes from "./src/routes/accountantRoutes.js";
 
 // Load environment variables
 dotenv.config();
@@ -30,6 +33,10 @@ connectDB();
 
 // Initialize express app
 const app = express();
+const httpServer = createServer(app);
+
+// Initialize Socket.io
+initSocket(httpServer);
 
 // =====================================
 // 🛡️ CORS Configuration
@@ -123,6 +130,7 @@ app.use(`/api/${API_VERSION}/inventory`, inventoryRoutes);
 app.use(`/api/${API_VERSION}/reports`, reportRoutes);
 app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
 app.use(`/api/${API_VERSION}/uploads`, uploadRoutes);
+app.use(`/api/${API_VERSION}/accountant`, accountantRoutes);
 
 // =====================================
 // 💓 Health & Root
@@ -165,25 +173,26 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 if (process.env.NODE_ENV !== "production") {
-  const server = app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║   🌿 Garden Management System API                    ║
 ║   Running in ${process.env.NODE_ENV} mode             ║
 ║   📡 http://localhost:${PORT}                         ║
 ║   🏥 /health                                           ║
+║   🔌 WebSocket: Enabled (Socket.io)                   ║
 ╚═══════════════════════════════════════════════════════╝
     `);
   });
 
   process.on("unhandledRejection", (err) => {
     console.error(`❌ Unhandled Rejection: ${err.message}`);
-    server.close(() => process.exit(1));
+    httpServer.close(() => process.exit(1));
   });
 
   process.on("SIGTERM", () => {
     console.log("👋 SIGTERM received. Shutting down gracefully...");
-    server.close(() => console.log("✅ Process terminated"));
+    httpServer.close(() => console.log("✅ Process terminated"));
   });
 }
 

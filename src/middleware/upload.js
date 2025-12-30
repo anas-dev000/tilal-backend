@@ -21,17 +21,19 @@ const upload = multer({
     // ✅ Support both images and videos
     const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
     const allowedVideoTypes = /mp4|mov|avi|mkv|webm/;
+    const allowedDocTypes = /pdf/;
     
     const extname = file.originalname.toLowerCase();
     const mimetype = file.mimetype;
 
     const isImage = allowedImageTypes.test(extname) && mimetype.startsWith('image/');
     const isVideo = allowedVideoTypes.test(extname) && mimetype.startsWith('video/');
+    const isDoc = allowedDocTypes.test(extname) && mimetype === 'application/pdf';
 
-    if (isImage || isVideo) {
+    if (isImage || isVideo || isDoc) {
       return cb(null, true);
     }
-    cb(new Error("Only image and video files are allowed!"));
+    cb(new Error("Only image, video and PDF files are allowed!"));
   },
 });
 
@@ -39,14 +41,15 @@ const upload = multer({
 const uploadToCloudinary = (fileBuffer, folder = "garden-ms", mimetype) => {
   return new Promise((resolve, reject) => {
     const isVideo = mimetype.startsWith('video/');
+    const isPdf = mimetype === 'application/pdf';
     
     const uploadOptions = {
       folder,
-      resource_type: isVideo ? 'video' : 'image', // ✅ Auto-detect
+      resource_type: isVideo ? 'video' : isPdf ? 'image' : 'auto', 
     };
 
-    // ✅ Only apply transformations to images
-    if (!isVideo) {
+    // ✅ Only apply transformations to real images (not videos or PDFs)
+    if (!isVideo && !isPdf) {
       uploadOptions.transformation = [
         { width: 1280, crop: "limit" },
         { quality: "auto:low" },

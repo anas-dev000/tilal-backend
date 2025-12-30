@@ -7,6 +7,7 @@ import Inventory from "../models/Inventory.js";
 import {
   notifyTaskAssignment,
   notifyTaskCompletion,
+  notifyFeedback,
 } from "../services/notificationService.js";
 import mongoose from "mongoose";
 
@@ -235,6 +236,14 @@ export const createTask = async (req, res) => {
       .populate("client", "name email phone address")
       .populate("site", "name siteType")
       .populate("materials.item", "name sku unit");
+
+    // Notify Worker
+    if (task.worker) {
+        const worker = await User.findById(task.worker);
+        if (worker) {
+            await notifyTaskAssignment(worker, task, task.client);
+        }
+    }
 
     res.status(201).json({
       success: true,
@@ -585,6 +594,13 @@ export const completeTask = async (req, res) => {
       };
     }
     await task.save();
+
+    // Notify Client, Admin, and Accountant
+    const populatedTask = await Task.findById(task._id).populate('worker client');
+    if (populatedTask.client && populatedTask.worker) {
+        await notifyTaskCompletion(populatedTask.client, populatedTask, populatedTask.worker);
+    }
+
     res.status(200).json({
       success: true,
       message: "Task completed successfully",
@@ -850,6 +866,10 @@ export const submitFeedback = async (req, res) => {
     task.feedback = feedbackData;
     await task.save();
 
+    // Notify Admin and Worker
+    const populatedTask = await Task.findById(task._id).populate('client');
+    await notifyFeedback(populatedTask, feedbackData, populatedTask.client);
+
     res.status(200).json({
       success: true,
       message: "Feedback submitted successfully",
@@ -904,6 +924,10 @@ export const markSatisfied = async (req, res) => {
     };
 
     await task.save();
+
+    // Notify Admin and Worker
+    const populatedTask = await Task.findById(task._id).populate('client');
+    await notifyFeedback(populatedTask, task.feedback, populatedTask.client);
 
     res.status(200).json({
       success: true,
