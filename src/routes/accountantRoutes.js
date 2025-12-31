@@ -8,7 +8,7 @@ import {
   getInvoiceStats,
   getPaymentAlerts
 } from '../controllers/invoiceController.js';
-import { getAllSites, getSiteById } from '../controllers/siteController.js';
+import { getAllSites, getSiteById, updateSite } from '../controllers/siteController.js';
 import { getClients, getClient } from '../controllers/clientController.js';
 import { protect, accountantOnly } from '../middleware/auth.js';
 import { uploadSingle } from '../middleware/upload.js';
@@ -38,6 +38,7 @@ router
 // Sites (read-only for invoice creation - accountants can view sites but not modify)
 router.get('/sites', getAllSites);
 router.get('/sites/:id', getSiteById);
+router.put('/sites/:id', updateSite);
 
 // Clients (read-only for accountants)
 router.get('/clients', getClients);

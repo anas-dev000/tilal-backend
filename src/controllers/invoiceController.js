@@ -16,9 +16,10 @@ export const getInvoices = async (req, res) => {
       site,
       startDate,
       endDate,
-      page = 1,
       limit = 20,
-      sort = '-createdAt'
+      page = 1,
+      sort = '-createdAt',
+      search // Add search param
     } = req.query;
 
     const query = {};
@@ -32,6 +33,11 @@ export const getInvoices = async (req, res) => {
       query.createdAt = {};
       if (startDate) query.createdAt.$gte = new Date(startDate);
       if (endDate) query.createdAt.$lte = new Date(endDate);
+    }
+
+    // Add search by invoice number
+    if (search) {
+      query.invoiceNumber = { $regex: search, $options: 'i' };
     }
 
     const invoices = await Invoice.find(query)

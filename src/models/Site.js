@@ -133,7 +133,6 @@ const siteSchema = new mongoose.Schema(
     // Payment Cycle Information
     paymentCycle: {
       type: String,
-      enum: ["monthly", "quarterly", "semi-annually", "annually"],
       default: "monthly",
     },
     lastPaymentDate: {
