@@ -8,7 +8,7 @@ import Branch from '../models/Branch.js';
  */
 export const getUsers = async (req, res) => {
   try {
-    const { role, branch, isActive, search } = req.query;
+    const { role, branch, isActive, search, page = 1, limit = 20, sort = '-createdAt' } = req.query;
     
     let query = {};
     
@@ -25,11 +25,19 @@ export const getUsers = async (req, res) => {
     const users = await User.find(query)
       .populate('branch', 'name code')
       .select('-password')
-      .sort('-createdAt');
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await User.countDocuments(query);
 
     res.status(200).json({
       success: true,
       count: users.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: users
     });
   } catch (error) {
@@ -184,7 +192,7 @@ export const deleteUser = async (req, res) => {
  */
 export const getWorkers = async (req, res) => {
   try {
-    const { branch } = req.query;
+    const { branch, page = 1, limit = 20, sort = '-workerDetails.rating' } = req.query;
     
     let query = { role: 'worker', isActive: true };
     if (branch) query.branch = branch;
@@ -192,11 +200,19 @@ export const getWorkers = async (req, res) => {
     const workers = await User.find(query)
       .populate('branch', 'name code')
       .select('-password')
-      .sort('-workerDetails.rating');
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await User.countDocuments(query);
 
     res.status(200).json({
       success: true,
       count: workers.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: workers
     });
   } catch (error) {

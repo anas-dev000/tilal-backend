@@ -345,15 +345,29 @@ export const getClientTasks = async (req, res) => {
       });
     }
 
+    const {
+      page = 1,
+      limit = 20,
+      sort = '-createdAt'
+    } = req.query;
+
     const tasks = await Task.find({ client: req.params.id })
       .populate('worker', 'name email phone')
       .populate('branch', 'name')
       .populate('site', 'name siteType')
-      .sort('-createdAt');
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await Task.countDocuments({ client: req.params.id });
 
     res.status(200).json({
       success: true,
       count: tasks.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: tasks
     });
   } catch (error) {
