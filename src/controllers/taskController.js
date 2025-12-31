@@ -27,6 +27,9 @@ export const getTasks = async (req, res) => {
       branch,
       priority,
       category,
+      page = 1,
+      limit = 20,
+      sort = "-createdAt",
     } = req.query;
 
     let query = {};
@@ -49,11 +52,19 @@ export const getTasks = async (req, res) => {
       .populate("worker", "name email phone")
       .populate("branch", "name code")
       .populate("site", "name siteType totalArea")
-      .sort("-createdAt");
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await Task.countDocuments(query);
 
     res.status(200).json({
       success: true,
       count: tasks.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: tasks,
     });
   } catch (error) {

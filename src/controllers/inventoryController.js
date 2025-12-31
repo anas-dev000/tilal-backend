@@ -330,15 +330,29 @@ export const restockInventory = async (req, res) => {
  */
 export const getInventoryTransactions = async (req, res) => {
   try {
+    const {
+      page = 1,
+      limit = 20,
+      sort = '-createdAt'
+    } = req.query;
+
     const transactions = await InventoryTransaction.find({ inventory: req.params.id })
       .populate('worker', 'name email')
       .populate('task', 'title status')
       .populate('confirmedBy', 'name')
-      .sort('-createdAt');
+      .sort(sort)
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await InventoryTransaction.countDocuments({ inventory: req.params.id });
 
     res.status(200).json({
       success: true,
       count: transactions.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: transactions
     });
   } catch (error) {
@@ -358,16 +372,31 @@ export const getInventoryTransactions = async (req, res) => {
  */
 export const getLowStockItems = async (req, res) => {
   try {
+    const {
+      page = 1,
+      limit = 20
+    } = req.query;
+
     // ✅ جلب المنتجات اللي الكمية فيها أقل من أو تساوي الحد الأدنى
-    const lowStockItems = await Inventory.find({
+    const query = {
       $expr: { $lte: ['$quantity.current', '$quantity.minimum'] }
-    })
+    };
+
+    const lowStockItems = await Inventory.find(query)
       .populate('branch', 'name')
-      .sort('quantity.current'); // ترتيب من الأقل كمية
+      .sort('quantity.current')
+      .limit(limit * 1)
+      .skip((page - 1) * limit)
+      .lean();
+
+    const count = await Inventory.countDocuments(query);
 
     res.status(200).json({
       success: true,
       count: lowStockItems.length,
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: parseInt(page),
       data: lowStockItems
     });
   } catch (error) {

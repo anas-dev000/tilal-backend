@@ -340,17 +340,16 @@ export const getMonthlyReport = async (req, res) => {
  */
 export const getWorkerPerformanceReport = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
+    const {
+      page = 1,
+      limit = 20,
+      sort = 'tasksCompleted'
+    } = req.query;
 
-    const dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter.completedAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
+    const sortDir = sort.startsWith('-') ? -1 : 1;
+    const sortField = sort.replace(/^-/, '');
 
-    const workerPerformance = await Task.aggregate([
+    const pipeline = [
       {
         $match: {
           status: 'completed',
@@ -386,13 +385,30 @@ export const getWorkerPerformanceReport = async (req, res) => {
         }
       },
       {
-        $sort: { tasksCompleted: -1 }
+        $sort: { [sortField]: sortDir }
       }
+    ];
+
+    // Execution of total count for aggregation is tricky, we'll get it from the full result for now or perform a separate count
+    const totalResults = await Task.aggregate([
+        { $match: { status: 'completed', ...dateFilter } },
+        { $group: { _id: '$worker' } },
+        { $count: 'total' }
+    ]);
+    const total = totalResults[0]?.total || 0;
+
+    const workerPerformance = await Task.aggregate([
+        ...pipeline,
+        { $skip: (page - 1) * limit },
+        { $limit: limit * 1 }
     ]);
 
     res.status(200).json({
       success: true,
       count: workerPerformance.length,
+      total,
+      totalPages: Math.ceil(total / limit),
+      currentPage: parseInt(page),
       data: workerPerformance
     });
   } catch (error) {
