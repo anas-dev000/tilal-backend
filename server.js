@@ -24,6 +24,7 @@ import notificationRoutes from "./src/routes/notificationRoutes.js";
 import uploadRoutes from "./src/routes/uploadRoutes.js";
 import siteRoutes from "./src/routes/siteRoutes.js";
 import accountantRoutes from "./src/routes/accountantRoutes.js";
+import invoiceRoutes from "./src/routes/invoiceRoutes.js";
 
 // Load environment variables
 dotenv.config();
@@ -131,6 +132,7 @@ app.use(`/api/${API_VERSION}/reports`, reportRoutes);
 app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
 app.use(`/api/${API_VERSION}/uploads`, uploadRoutes);
 app.use(`/api/${API_VERSION}/accountant`, accountantRoutes);
+app.use(`/api/${API_VERSION}/invoices`, invoiceRoutes);
 
 // =====================================
 // 💓 Health & Root

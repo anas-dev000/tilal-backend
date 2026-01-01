@@ -435,6 +435,61 @@ export const getPaymentAlerts = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Update payment status
+ * @route   PUT /api/v1/invoices/:id/payment-status
+ * @access  Private (Admin only)
+ */
+export const updatePaymentStatus = async (req, res) => {
+  try {
+    const { paymentStatus, paymentMethod, paidAmount, paymentDate } = req.body;
+
+    let invoice = await Invoice.findById(req.params.id);
+
+    if (!invoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    // Update payment fields
+    if (paymentStatus) invoice.paymentStatus = paymentStatus;
+    if (paymentMethod) invoice.paymentMethod = paymentMethod;
+    if (paidAmount !== undefined) invoice.paidAmount = paidAmount;
+
+    if (paymentDate) {
+      invoice.paidAt = new Date(paymentDate);
+    }
+
+    // If marked as paid, set paidAt to now if not provided
+    if (paymentStatus === 'paid' && !invoice.paidAt) {
+      invoice.paidAt = new Date();
+    }
+
+    await invoice.save();
+
+    // Populate and return
+    const populatedInvoice = await Invoice.findById(invoice._id)
+      .populate('client', 'name email phone')
+      .populate('site', 'name location')
+      .populate('task', 'title');
+
+    res.status(200).json({
+      success: true,
+      message: 'Payment status updated successfully',
+      data: populatedInvoice
+    });
+  } catch (error) {
+    console.error('Update payment status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update payment status',
+      error: error.message
+    });
+  }
+};
+
 export default {
   getInvoices,
   getInvoiceById,
@@ -442,5 +497,6 @@ export default {
   updateInvoice,
   deleteInvoice,
   getInvoiceStats,
-  getPaymentAlerts
+  getPaymentAlerts,
+  updatePaymentStatus
 };

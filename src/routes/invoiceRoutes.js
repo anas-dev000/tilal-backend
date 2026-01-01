@@ -6,10 +6,11 @@ import {
   updateInvoice,
   deleteInvoice,
   getInvoiceStats,
-  getPaymentAlerts
+  getPaymentAlerts,
+  updatePaymentStatus
 } from '../controllers/invoiceController.js';
 import { protect, authorize } from '../middleware/auth.js';
-import { uploadToCloudinary } from '../middleware/upload.js';
+import { uploadSingle } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -24,12 +25,15 @@ router.get('/payment-alerts', authorize('admin'), getPaymentAlerts);
 router
   .route('/')
   .get(authorize('admin'), getInvoices)
-  .post(authorize('admin'), uploadToCloudinary.single('pdfFile'), createInvoice);
+  .post(authorize('admin'), ...uploadSingle('pdfFile', 'invoices'), createInvoice);
 
 router
   .route('/:id')
   .get(getInvoiceById)
-  .put(authorize('admin'), uploadToCloudinary.single('pdfFile'), updateInvoice)
+  .put(authorize('admin'), ...uploadSingle('pdfFile', 'invoices'), updateInvoice)
   .delete(authorize('admin'), deleteInvoice);
+
+// Payment status update route
+router.put('/:id/payment-status', authorize('admin'), updatePaymentStatus);
 
 export default router;
