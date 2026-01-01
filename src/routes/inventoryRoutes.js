@@ -15,14 +15,12 @@ import { protect, authorize } from '../middleware/auth.js';
 const router = express.Router();
 
 // Protected routes
-router.get('/', protect, getInventoryItems);
-router.get('/:id', protect, getInventoryItem);
-router.get('/:id/transactions', protect, getInventoryTransactions);
-
-// Worker and Admin routes
-router.post('/:id/withdraw', protect, authorize('admin', 'worker'), withdrawInventory);
+router.get('/', protect, authorize('admin'), getInventoryItems);
+router.get('/:id', protect, authorize('admin'), getInventoryItem);
+router.get('/:id/transactions', protect, authorize('admin'), getInventoryTransactions);
 
 // Admin only routes
+router.post('/:id/withdraw', protect, authorize('admin'), withdrawInventory);
 router.post('/', protect, authorize('admin'), createInventoryItem);
 router.put('/:id', protect, authorize('admin'), updateInventoryItem);
 router.delete('/:id', protect, authorize('admin'), deleteInventoryItem);

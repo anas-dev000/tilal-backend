@@ -261,6 +261,14 @@ const taskSchema = new mongoose.Schema(
       ref: "Invoice",
     },
 
+    visibleToClient: {
+      type: Boolean,
+      default: true,
+    },
+    voiceRecording: {
+      url: { type: String, default: null },
+      publicId: { type: String, default: null },
+    },
     notes: {
       type: String,
       maxlength: 1000,

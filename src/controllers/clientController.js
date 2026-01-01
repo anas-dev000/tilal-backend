@@ -351,7 +351,14 @@ export const getClientTasks = async (req, res) => {
       sort = '-createdAt'
     } = req.query;
 
-    const tasks = await Task.find({ client: req.params.id })
+    const query = { client: req.params.id };
+    
+    // ✅ Apply visibility filter for clients
+    if (req.user.role === 'client') {
+      query.visibleToClient = true;
+    }
+
+    const tasks = await Task.find(query)
       .populate('worker', 'name email phone')
       .populate('branch', 'name')
       .populate('site', 'name siteType')
@@ -360,7 +367,7 @@ export const getClientTasks = async (req, res) => {
       .skip((page - 1) * limit)
       .lean();
 
-    const count = await Task.countDocuments({ client: req.params.id });
+    const count = await Task.countDocuments(query);
 
     res.status(200).json({
       success: true,

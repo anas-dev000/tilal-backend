@@ -28,12 +28,15 @@ const router = express.Router();
 
 router.use(protect);
 
-router.route("/").get(getTasks).post(authorize("admin"), createTask);
+router
+  .route("/")
+  .get(getTasks)
+  .post(authorize("admin"), ...uploadSingle("voiceRecording", "tasks"), createTask);
 
 router
   .route("/:id")
   .get(getTask)
-  .put(updateTask)
+  .put(authorize("admin", "worker"), ...uploadSingle("voiceRecording", "tasks"), updateTask)
   .delete(authorize("admin"), deleteTask);
 
 router.post("/:id/start", startTask);

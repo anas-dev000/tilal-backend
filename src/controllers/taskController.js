@@ -47,7 +47,13 @@ export const getTasks = async (req, res) => {
     if (priority) query.priority = priority;
     if (category) query.category = category;
 
+    let selectFields = "";
+    if (req.user.role === "worker") {
+      selectFields = "-materials -cost";
+    }
+
     const tasks = await Task.find(query)
+      .select(selectFields)
       .populate("client", "name email phone address")
       .populate("worker", "name email phone")
       .populate("branch", "name code")
@@ -83,7 +89,7 @@ export const getTasks = async (req, res) => {
  */
 export const getTask = async (req, res) => {
   try {
-    const baseTask = await Task.findById(req.params.id).select("worker").lean();
+    const baseTask = await Task.findById(req.params.id).select("worker client visibleToClient").lean();
 
     if (!baseTask) {
       return res.status(404).json({
@@ -93,16 +99,29 @@ export const getTask = async (req, res) => {
     }
 
     // Authorization check
-    if (req.user.role !== "admin") {
-      if (!baseTask.worker || baseTask.worker._id.toString() !== req.user.id) {
+    if (req.user.role === "worker") {
+      if (!baseTask.worker || baseTask.worker.toString() !== req.user.id) {
         return res.status(403).json({
           success: false,
           message: "Not authorized to view this task",
         });
       }
+    } else if (req.user.role === "client") {
+      if (baseTask.client.toString() !== req.user.id || !baseTask.visibleToClient) {
+        return res.status(404).json({
+          success: false,
+          message: "Task not found",
+        });
+      }
+    }
+
+    let selectFields = "";
+    if (req.user.role === "worker") {
+      selectFields = "-materials -cost";
     }
 
     const task = await Task.findById(req.params.id)
+      .select(selectFields)
       .populate("client", "name email phone address whatsapp")
       .populate("worker", "name email phone workerDetails")
       .populate("branch", "name code address")
@@ -116,9 +135,6 @@ export const getTask = async (req, res) => {
       })
       .populate("materials.item", "name sku unit")
       .populate("adminReview.reviewedBy", "name email");
-
-    // REMOVED: Dynamic lookup of reference images
-    // Now uses task.referenceImages (snapshotted at creation)
 
     res.status(200).json({
       success: true,
@@ -141,20 +157,42 @@ export const getTask = async (req, res) => {
  */
 export const createTask = async (req, res) => {
   try {
+    // Handle FormData parsing for sections and materials
+    let { sections, materials, client, worker } = req.body;
+
+    if (typeof sections === "string") {
+      try {
+        sections = JSON.parse(sections);
+      } catch (e) {
+        console.error("Error parsing sections:", e);
+      }
+    }
+
+    if (typeof materials === "string") {
+      try {
+        materials = JSON.parse(materials);
+      } catch (e) {
+        console.error("Error parsing materials:", e);
+      }
+    }
+
     const {
       title,
       description,
       site,
-      sections, // array of section IDs
-      client,
       scheduledDate,
       priority,
       category,
       estimatedDuration,
-      materials,
       notes,
-      worker,
+      visibleToClient,
     } = req.body;
+
+    // Handle visibleToClient from FormData (string to boolean)
+    let isVisible = true;
+    if (visibleToClient !== undefined) {
+      isVisible = visibleToClient === "true" || visibleToClient === true;
+    }
 
     // Validate required fields
     if (!title || !description || !site || !sections || !client || !worker) {
@@ -225,6 +263,15 @@ export const createTask = async (req, res) => {
       }
     });
 
+    // Handle Voice Recording from upload middleware
+    let voiceRecording = { url: null, publicId: null };
+    if (req.file && req.file.cloudinaryUrl) {
+      voiceRecording = {
+        url: req.file.cloudinaryUrl,
+        publicId: req.file.cloudinaryId,
+      };
+    }
+
     const task = await Task.create({
       title,
       description,
@@ -240,6 +287,8 @@ export const createTask = async (req, res) => {
       notes,
       status: "pending",
       referenceImages, // ← Snapshotted here
+      voiceRecording,
+      visibleToClient: isVisible,
     });
 
     // Populate and return
@@ -408,7 +457,46 @@ export const updateTask = async (req, res) => {
       });
     }
 
-    if (req.body.worker && !task.worker) {
+    const updateData = { ...req.body };
+
+    // ✅ Restrict workers from modifying certain fields
+    if (req.user.role === "worker") {
+      delete updateData.materials;
+      delete updateData.cost;
+      delete updateData.worker;
+      delete updateData.site;
+      delete updateData.client;
+      delete updateData.sections;
+      delete updateData.title;
+      delete updateData.description;
+      delete updateData.scheduledDate;
+      delete updateData.priority;
+      delete updateData.category;
+    }
+
+    // Handle FormData parsing
+    if (typeof updateData.sections === "string") {
+      try {
+        updateData.sections = JSON.parse(updateData.sections);
+      } catch (e) {
+        console.error("Error parsing sections:", e);
+      }
+    }
+
+    if (typeof updateData.materials === "string") {
+      try {
+        updateData.materials = JSON.parse(updateData.materials);
+      } catch (e) {
+        console.error("Error parsing materials:", e);
+      }
+    }
+
+    // Handle visibleToClient from FormData (string to boolean)
+    if (updateData.visibleToClient !== undefined) {
+      updateData.visibleToClient = updateData.visibleToClient === "true" || updateData.visibleToClient === true;
+    }
+
+    if (updateData.worker && !task.worker) {
       if (task.materials && task.materials.length > 0) {
         for (const material of task.materials) {
           if (material.item) {
@@ -419,12 +507,12 @@ export const updateTask = async (req, res) => {
           }
         }
       }
-      req.body.status = "assigned";
+      updateData.status = "assigned";
     }
 
     // ✅ If marking as completed, update section last task status
-    if (req.body.status === "completed" && task.status !== "completed") {
-      req.body.completedAt = new Date();
+    if (updateData.status === "completed" && task.status !== "completed") {
+      updateData.completedAt = new Date();
 
       await Client.findByIdAndUpdate(task.client, {
         $inc: { completedTasks: 1 },
@@ -453,7 +541,7 @@ export const updateTask = async (req, res) => {
     }
 
     // ✅ If marking as rejected, update section last task status
-    if (req.body.status === "rejected" && task.status !== "rejected") {
+    if (updateData.status === "rejected" && task.status !== "rejected") {
       if (task.site) {
         const site = await Site.findById(task.site);
         if (site && task.sections) {
@@ -464,7 +552,27 @@ export const updateTask = async (req, res) => {
       }
     }
 
-    task = await Task.findByIdAndUpdate(req.params.id, req.body, {
+    // Handle Voice Recording from upload middleware
+    if (req.file && req.file.cloudinaryUrl) {
+      updateData.voiceRecording = {
+        url: req.file.cloudinaryUrl,
+        publicId: req.file.cloudinaryId,
+      };
+
+      // Optional: Delete old recording from Cloudinary
+      if (task.voiceRecording && task.voiceRecording.publicId) {
+        try {
+          const { v2: cloudinary } = await import("cloudinary");
+          await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
+            resource_type: "video",
+          });
+        } catch (err) {
+          console.error("Failed to delete old voice recording:", err);
+        }
+      }
+    }
+
+    task = await Task.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
     })
@@ -501,6 +609,19 @@ export const deleteTask = async (req, res) => {
         success: false,
         message: "Task not found",
       });
+    }
+
+    // Delete voice recording from Cloudinary
+    if (task.voiceRecording && task.voiceRecording.publicId) {
+      try {
+        const { v2: cloudinary } = await import("cloudinary");
+        await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
+          resource_type: "video",
+        });
+        console.log("🗑️ Voice recording deleted from Cloudinary");
+      } catch (err) {
+        console.error("Failed to delete voice recording from Cloudinary:", err);
+      }
     }
 
     await task.deleteOne();
