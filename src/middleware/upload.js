@@ -18,24 +18,27 @@ const upload = multer({
   storage,
   limits: { fileSize: 100 * 1024 * 1024 }, // ✅ 100MB for videos
   fileFilter: (req, file, cb) => {
-    // ✅ Support images, videos, PDFs and audio
-    const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
-    const allowedVideoTypes = /mp4|mov|avi|mkv|webm/;
-    const allowedAudioTypes = /mp3|wav|ogg|webm|m4a|mpeg/;
-    const allowedDocTypes = /pdf/;
+    // 🛑 DEBUGING: Allow everything to see if filter is the issue
+    console.log("🔍 DEBUG: fileFilter checking:", file.originalname, file.mimetype);
+    return cb(null, true);
+
+    // const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
+    // const allowedVideoTypes = /mp4|mov|avi|mkv|webm/;
+    // const allowedAudioTypes = /mp3|wav|ogg|webm|m4a|mpeg/;
+    // const allowedDocTypes = /pdf/;
     
-    const extname = file.originalname.toLowerCase();
-    const mimetype = file.mimetype;
+    // const extname = file.originalname.toLowerCase();
+    // const mimetype = file.mimetype;
 
-    const isImage = allowedImageTypes.test(extname) && mimetype.startsWith('image/');
-    const isVideo = allowedVideoTypes.test(extname) && mimetype.startsWith('video/');
-    const isAudio = allowedAudioTypes.test(extname) && mimetype.startsWith('audio/');
-    const isDoc = allowedDocTypes.test(extname) && mimetype === 'application/pdf';
+    // const isImage = allowedImageTypes.test(extname) && mimetype.startsWith('image/');
+    // const isVideo = allowedVideoTypes.test(extname) && mimetype.startsWith('video/');
+    // const isAudio = allowedAudioTypes.test(extname) && mimetype.startsWith('audio/');
+    // const isDoc = allowedDocTypes.test(extname) && mimetype === 'application/pdf';
 
-    if (isImage || isVideo || isAudio || isDoc) {
-      return cb(null, true);
-    }
-    cb(new Error("Only image, video, audio and PDF files are allowed!"));
+    // if (isImage || isVideo || isAudio || isDoc) {
+    //   return cb(null, true);
+    // }
+    // cb(new Error("Only image, video, audio and PDF files are allowed!"));
   },
 });
 
@@ -80,6 +83,10 @@ export const uploadSingle = (fieldName, folder = "general") => [
   upload.single(fieldName),
   async (req, res, next) => {
     try {
+      console.log("🛠️ MiddleWare uploadSingle called for:", fieldName);
+      console.log("📁 req.file:", req.file ? "File present" : "No file");
+      if (req.file) console.log("📄 File details:", req.file.originalname, req.file.mimetype, req.file.size);
+      
       if (!req.file) return next();
 
       console.log("📤 Uploading to Cloudinary...");

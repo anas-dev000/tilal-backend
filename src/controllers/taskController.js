@@ -38,6 +38,11 @@ export const getTasks = async (req, res) => {
       query.worker = req.user.id;
     }
 
+    if (req.user.role === "client") {
+      query.client = req.user.id;
+      query.visibleToClient = true;
+    }
+
     if (status) query.status = status;
     if (worker) query.worker = worker;
     if (client) query.client = client;
@@ -264,6 +269,7 @@ export const createTask = async (req, res) => {
     });
 
     // Handle Voice Recording from upload middleware
+    console.log("🎤 Request File for Voice:", req.file);
     let voiceRecording = { url: null, publicId: null };
     if (req.file && req.file.cloudinaryUrl) {
       voiceRecording = {
@@ -552,14 +558,42 @@ export const updateTask = async (req, res) => {
       }
     }
 
-    // Handle Voice Recording from upload middleware
+    // ✅ Handle Voice Recording
+    // DEBUG: Write to file
+    try {
+      const fs = await import('fs');
+      const logData = `\n[${new Date().toISOString()}] Update Task ${req.params.id}\nHeaders: ${JSON.stringify(req.headers['content-type'])}\nFile: ${JSON.stringify(req.file || 'No File')}\nBody Voice: ${req.body.voiceRecording}\n`;
+      fs.appendFileSync('debug_log.txt', logData);
+    } catch (e) { console.error("Log error", e); }
+
+    // 1. Remove voiceRecording from body to avoid corruption
+    delete updateData.voiceRecording;
+
+    // 2. Handle deletion flag
+    if (req.body.deleteVoiceRecording === "true") {
+      updateData.voiceRecording = { url: null, publicId: null };
+      
+      // Delete old from Cloudinary
+      if (task.voiceRecording && task.voiceRecording.publicId) {
+        try {
+          const { v2: cloudinary } = await import("cloudinary");
+          await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
+            resource_type: "video",
+          });
+        } catch (err) {
+          console.error("Failed to delete old voice recording:", err);
+        }
+      }
+    }
+
+    // 3. Handle new file upload
     if (req.file && req.file.cloudinaryUrl) {
       updateData.voiceRecording = {
         url: req.file.cloudinaryUrl,
         publicId: req.file.cloudinaryId,
       };
 
-      // Optional: Delete old recording from Cloudinary
+      // Delete old from Cloudinary if replacing
       if (task.voiceRecording && task.voiceRecording.publicId) {
         try {
           const { v2: cloudinary } = await import("cloudinary");
@@ -585,7 +619,18 @@ export const updateTask = async (req, res) => {
       success: true,
       message: "Task updated successfully",
       data: task,
+      _debug: {
+        hasFile: !!req.file,
+        fileName: req.file?.originalname,
+        fileUrl: req.file?.cloudinaryUrl,
+        contentType: req.headers['content-type']
+      }
     });
+    
+    try {
+       const fs = await import('fs');
+       fs.appendFileSync('debug_log.txt', `Success: URL=${task.voiceRecording?.url}\n`);
+    } catch (e) {}
   } catch (error) {
     res.status(500).json({
       success: false,
@@ -1040,7 +1085,7 @@ export const markSatisfied = async (req, res) => {
       });
     }
 
-    if (req.user.role !== "client" && task.client.toString() !== req.user.id) {
+    if (req.user.role === "client" && task.client.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         message: "Not authorized",

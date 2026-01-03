@@ -300,7 +300,10 @@ export const getUserNotifications = async (userId, options = {}) => {
       page = 1
     } = options;
 
-    const query = { 'recipient.id': userId };
+    const query = { 
+      'recipient.id': userId,
+      createdAt: { $gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } 
+    };
     
     if (unreadOnly) {
       query.read = false;
@@ -331,7 +334,10 @@ export const getUserNotifications = async (userId, options = {}) => {
  */
 export const markAsRead = async (notificationId) => {
   try {
-    await Notification.findByIdAndDelete(notificationId);
+    await Notification.findByIdAndUpdate(notificationId, { 
+      read: true, 
+      readAt: new Date() 
+    });
     return true;
   } catch (error) {
     console.error('Delete on markAsRead error:', error);
@@ -344,7 +350,10 @@ export const markAsRead = async (notificationId) => {
  */
 export const markAllAsRead = async (userId) => {
   try {
-    await Notification.deleteMany({ 'recipient.id': userId });
+    await Notification.updateMany(
+      { 'recipient.id': userId, read: false },
+      { read: true, readAt: new Date() }
+    );
     return true;
   } catch (error) {
     console.error('Delete all on markAllAsRead error:', error);
