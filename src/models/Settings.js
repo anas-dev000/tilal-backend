@@ -36,7 +36,7 @@ const settingsSchema = new mongoose.Schema({
   branding: {
     companyName: {
       type: String,
-      default: 'Garden Management System'
+      default: 'Kingdom Telal Company'
     },
     logo: {
       type: String,

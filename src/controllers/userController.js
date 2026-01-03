@@ -251,3 +251,38 @@ export const getWorkerDetails = async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+/**
+ * @desc    Toggle User Status (Activate/Deactivate)
+ * @route   PUT /api/v1/users/:id/toggle-status
+ * @access  Private/Admin
+ */
+export const toggleUserStatus = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Toggle between active and inactive
+    user.isActive = !user.isActive;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
+      data: user.getPublicProfile ? user.getPublicProfile() : user
+    });
+  } catch (error) {
+    console.error('Toggle user status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to toggle user status',
+      error: error.message
+    });
+  }
+};

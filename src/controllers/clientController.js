@@ -21,7 +21,7 @@ export const clientLogin = async (req, res) => {
     if (!client) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Incorrect Email or Password'
       });
     }
 
@@ -44,7 +44,7 @@ export const clientLogin = async (req, res) => {
     if (!isMatch) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid credentials'
+        message: 'Incorrect Email or Password'
       });
     }
 
