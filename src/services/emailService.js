@@ -11,7 +11,13 @@ const createTransporter = () => {
     return null;
   }
 
-  return nodemailer.createTransporter({
+  console.log('DEBUG: Email Config:', {
+    host: process.env.EMAIL_HOST,
+    user: process.env.EMAIL_USER,
+    enabled: process.env.ENABLE_EMAIL_NOTIFICATIONS
+  });
+
+  return nodemailer.createTransport({
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.EMAIL_PORT) || 587,
     secure: process.env.EMAIL_SECURE === 'true',
@@ -37,7 +43,7 @@ export const sendEmail = async (options) => {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_FROM || 'Garden Management <noreply@garden.com>',
+      from: process.env.EMAIL_FROM || 'Kingdom Telal Company <noreply@telal.com>',
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -78,7 +84,7 @@ export const sendTaskAssignmentEmail = async (worker, task, client) => {
       
       <p>Please log in to the system to view more details and start the task.</p>
       
-      <p>Best regards,<br>Garden Management Team</p>
+      <p>Best regards,<br>Kingdom Telal Company Team</p>
     </div>
   `;
 
@@ -109,7 +115,7 @@ export const sendTaskCompletionEmail = async (client, task, worker) => {
       <p>Please log in to view the results and provide your feedback.</p>
       
       <p>Thank you for choosing our services!</p>
-      <p>Best regards,<br>Garden Management Team</p>
+      <p>Best regards,<br>Kingdom Telal Company Team</p>
     </div>
   `;
 
@@ -139,7 +145,7 @@ export const sendLowStockAlert = async (adminEmail, item) => {
       
       <p>Please restock this item as soon as possible.</p>
       
-      <p>Best regards,<br>Garden Management System</p>
+      <p>Best regards,<br>Kingdom Telal Company</p>
     </div>
   `;
 
@@ -170,7 +176,7 @@ export const sendInvoiceEmail = async (client, invoice, pdfPath) => {
       <p>If you have any questions, please don't hesitate to contact us.</p>
       
       <p>Thank you for your business!</p>
-      <p>Best regards,<br>Garden Management Team</p>
+      <p>Best regards,<br>Kingdom Telal Company Team</p>
     </div>
   `;
 
@@ -193,10 +199,11 @@ export const sendInvoiceEmail = async (client, invoice, pdfPath) => {
 /**
  * Send client credentials
  */
+// Send client credentials
 export const sendClientCredentials = async (client, username, temporaryPassword) => {
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #2d3748;">Welcome to Garden Management System</h2>
+      <h2 style="color: #2d3748;">Welcome to Kingdom Telal Company</h2>
       <p>Hello ${client.name},</p>
       <p>Your account has been created. Here are your login credentials:</p>
       
@@ -209,13 +216,44 @@ export const sendClientCredentials = async (client, username, temporaryPassword)
       
       <p>You can log in at: ${process.env.FRONTEND_URL}/client/login</p>
       
-      <p>Best regards,<br>Garden Management Team</p>
+      <p>Best regards,<br>Kingdom Telal Company Team</p>
     </div>
   `;
 
   return await sendEmail({
     to: client.email,
-    subject: 'Your Garden Management Account Credentials',
+    subject: 'Your Kingdom Telal Account Credentials',
+    html
+  });
+};
+
+/**
+ * Send password reset email
+ */
+export const sendPasswordResetEmail = async (user, resetUrl) => {
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #2d3748;">Password Reset Request</h2>
+      <p>Hello ${user.name},</p>
+      <p>You requested a password reset. Please click the button below to reset your password:</p>
+      
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${resetUrl}" style="background-color: #48bb78; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Reset Password</a>
+      </div>
+
+      <p>If the button doesn't work, verify this link:</p>
+      <p><a href="${resetUrl}">${resetUrl}</a></p>
+      
+      <p>This link will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+      
+      <p>Best regards,<br>Kingdom Telal Company Team</p>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: user.email,
+    subject: 'Password Reset Request',
     html
   });
 };
@@ -226,6 +264,7 @@ export default {
   sendTaskCompletionEmail,
   sendLowStockAlert,
   sendInvoiceEmail,
-  sendClientCredentials
+  sendClientCredentials,
+  sendPasswordResetEmail
 };
 

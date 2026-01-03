@@ -132,8 +132,9 @@ const siteSchema = new mongoose.Schema(
     notes: String,
     // Payment Cycle Information
     paymentCycle: {
-      type: String,
-      default: "monthly",
+      type: Number,
+      default: 1, // Default to 1 month
+      min: 1,
     },
     lastPaymentDate: {
       type: Date,
