@@ -74,7 +74,7 @@ You have been assigned a new task:
 
 Please log in to the system to view more details.
 
-Garden Management Team
+Kingdom Telal Company Team
   `.trim();
 
   return await sendWhatsAppMessage(worker.phone, message);
@@ -99,7 +99,7 @@ Please log in to view the results and provide your feedback.
 
 Thank you for choosing our services!
 
-Garden Management Team
+Kingdom Telal Company Team
   `.trim();
 
   return await sendWhatsAppMessage(client.whatsapp || client.phone, message);
@@ -121,7 +121,7 @@ The following inventory item is running low:
 
 Please restock this item as soon as possible.
 
-Garden Management System
+Kingdom Telal Company
   `.trim();
 
   return await sendWhatsAppMessage(adminPhone, message);
@@ -147,7 +147,7 @@ Please log in to view and download your invoice.
 
 Thank you for your business!
 
-Garden Management Team
+Kingdom Telal Company Team
   `.trim();
 
   return await sendWhatsAppMessage(client.whatsapp || client.phone, message);
@@ -158,7 +158,7 @@ Garden Management Team
  */
 export const sendClientCredentialsWhatsApp = async (client, username, temporaryPassword) => {
   const message = `
-🌿 *Welcome to Garden Management System*
+🌿 *Welcome to Kingdom Telal Company*
 
 Hello ${client.name},
 
@@ -171,7 +171,7 @@ Your account has been created. Here are your login credentials:
 
 Login at: ${process.env.FRONTEND_URL}/client/login
 
-Garden Management Team
+Kingdom Telal Company Team
   `.trim();
 
   return await sendWhatsAppMessage(client.whatsapp || client.phone, message);
@@ -194,7 +194,7 @@ Reminder: You have a task scheduled for today:
 
 Please make sure you're prepared.
 
-Garden Management Team
+Kingdom Telal Company Team
   `.trim();
 
   return await sendWhatsAppMessage(worker.phone, message);

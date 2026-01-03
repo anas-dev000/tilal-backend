@@ -7,6 +7,7 @@ import {
   deleteUser,
   getWorkers,
   getWorkerDetails,
+  toggleUserStatus,
 } from "../controllers/userController.js";
 import { protect, authorize } from "../middleware/auth.js";
 import {
@@ -19,6 +20,13 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/workers", getWorkers);
+
+router.put(
+  "/:id/toggle-status",
+  authorize("admin"),
+  mongoIdValidation,
+  toggleUserStatus
+);
 
 router
   .route("/")
