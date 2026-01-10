@@ -117,6 +117,11 @@ const clientSchema = new mongoose.Schema({
   lastPaymentDate: {
     type: Date,
     default: null
+  },
+  // ✅ NEW: Contract PDF
+  contractPdf: {
+    url: String,
+    cloudinaryId: String
   }
 }, {
   timestamps: true

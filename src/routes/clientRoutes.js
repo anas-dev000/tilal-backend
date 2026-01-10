@@ -10,6 +10,7 @@ import {
   toggleClientStatus 
 } from '../controllers/clientController.js';
 import { protect, authorize } from '../middleware/auth.js';
+import { uploadSingle } from '../middleware/upload.js';
 
 const router = express.Router();
 
@@ -22,8 +23,8 @@ router.get('/:id', protect, getClient);
 router.get('/:id/tasks', protect, getClientTasks);
 
 // Admin only routes
-router.post('/', protect, authorize('admin'), createClient);
-router.put('/:id', protect, updateClient);
+router.post('/', protect, authorize('admin'), uploadSingle('contractPdf'), createClient);
+router.put('/:id', protect, uploadSingle('contractPdf'), updateClient);
 router.delete('/:id', protect, authorize('admin'), deleteClient);
 router.put('/:id/toggle-status', protect, authorize('admin'), toggleClientStatus);
 

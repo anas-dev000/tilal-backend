@@ -3,6 +3,7 @@ import Task from '../models/Task.js';
 import { generateToken } from '../utils/jwt.js';
 import crypto from 'crypto';
 import { notifyClientCredentials } from '../services/notificationService.js';
+import { v2 as cloudinary } from "cloudinary";
 
 /**
  *   UNIFIED: Client login using standard JWT
@@ -193,6 +194,14 @@ export const createClient = async (req, res) => {
       clientData.isPasswordTemporary = false;
     }
 
+    // ✅ Handle Contract PDF Upload
+    if (req.file && req.file.cloudinaryUrl) {
+      clientData.contractPdf = {
+        url: req.file.cloudinaryUrl,
+        cloudinaryId: req.file.cloudinaryId
+      };
+    }
+
     const client = await Client.create(clientData);
 
     if (tempPassword) {
@@ -244,6 +253,22 @@ export const updateClient = async (req, res) => {
 
     if (updateData.password) {
       updateData.isPasswordTemporary = false;
+    }
+
+    // ✅ Handle Contract PDF Upload (Delete Old One)
+    if (req.file && req.file.cloudinaryUrl) {
+      if (client.contractPdf?.cloudinaryId) {
+        try {
+          await cloudinary.uploader.destroy(client.contractPdf.cloudinaryId);
+        } catch (err) {
+          console.error("Failed to delete old contract PDF:", err);
+        }
+      }
+
+      updateData.contractPdf = {
+        url: req.file.cloudinaryUrl,
+        cloudinaryId: req.file.cloudinaryId
+      };
     }
 
     client = await Client.findByIdAndUpdate(

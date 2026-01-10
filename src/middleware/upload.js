@@ -47,11 +47,18 @@ const uploadToCloudinary = (fileBuffer, folder = "garden-ms", mimetype) => {
   return new Promise((resolve, reject) => {
     const isVideo = mimetype.startsWith('video/');
     const isAudio = mimetype.startsWith('audio/');
-    const isPdf = mimetype === 'application/pdf';
     
+    // Robust PDF detection
+    const isPdf = mimetype === 'application/pdf' || 
+                  mimetype === 'application/x-pdf' || 
+                  mimetype === 'application/acrobat' || 
+                  mimetype === 'application/vnd.pdf' || 
+                  mimetype === 'text/pdf';
+
     const uploadOptions = {
       folder,
       resource_type: (isVideo || isAudio) ? 'video' : isPdf ? 'image' : 'auto', 
+      // For PDFs as 'image', Cloudinary makes them viewable.
     };
 
     // ✅ Only apply transformations to real images (not videos, audio or PDFs)
