@@ -151,6 +151,66 @@ export const uploadMultiple = (fieldName, maxCount = 50, folder = "tasks") => [
   },
 ];
 
+// ✅ Named fields upload (for Worker Profile)
+export const uploadFields = (fields, folder = "workers") => [
+  upload.fields(fields),
+  async (req, res, next) => {
+    try {
+      if (!req.files || Object.keys(req.files).length === 0) return next();
+
+      console.log(`📤 Uploading named fields to Cloudinary...`);
+
+      // req.files is an object where key is fieldname and value is array of files
+      // We need to iterate over keys and then over files
+      const uploadPromises = [];
+
+      Object.keys(req.files).forEach((fieldName) => {
+        req.files[fieldName].forEach((file) => {
+          uploadPromises.push(
+            uploadToCloudinary(file.buffer, folder, file.mimetype).then((result) => ({
+              fieldName,
+              result,
+              originalFile: file
+            }))
+          );
+        });
+      });
+
+      const results = await Promise.all(uploadPromises);
+
+      // Attach results back to req.files or a new property for easier access
+      // Let's modify req.files to contain useful info
+      
+      // Initialize an object to store results nicely if not strictly following multer structure
+      req.uploadedFiles = {};
+
+      results.forEach(({ fieldName, result, originalFile }) => {
+        // Since we likely have maxCount: 1 for these fields, we can just store the single result
+        // But to be safe if multiple were somehow allowed, we could use array. 
+        // For this specific use case (profile, residence, etc.), we usually just want one.
+        
+        // We'll attach the cloudinary URL and details to the file object in req.files[fieldName]
+        const fileIndex = req.files[fieldName].findIndex(f => f.originalname === originalFile.originalname);
+        if (fileIndex !== -1) {
+             req.files[fieldName][fileIndex].cloudinaryUrl = result.secure_url;
+             req.files[fieldName][fileIndex].cloudinaryId = result.public_id;
+             req.files[fieldName][fileIndex].resourceType = result.resource_type;
+        }
+
+        // Also populate a simple key-value map for easier controller usage
+        // e.g., req.uploadedFiles['profilePicture'] = "url..."
+        req.uploadedFiles[fieldName] = result.secure_url;
+      });
+
+      console.log("✅ All named files uploaded successfully");
+      next();
+    } catch (error) {
+      console.error("❌ Upload fields failed:", error);
+      next(error);
+    }
+  },
+];
+
 // ✅ Error handler
 export const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {

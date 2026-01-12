@@ -41,6 +41,27 @@ const userSchema = new mongoose.Schema({
     ref: 'Branch',
     default: null
   },
+  // ✅ Profile Picture
+  profilePicture: {
+    type: String,
+    default: null
+  },
+  // ✅ Contract PDF
+  contractPdf: {
+    type: String, // URL to the PDF
+    default: null
+  },
+  // ✅ Worker Documents
+  documents: {
+    residence: { type: String, default: null },
+    license: { type: String, default: null },
+    identity: { type: String, default: null },
+    // Replaced single contract with multiple files
+    files: [{
+      name: String, // Original filename
+      url: String   // Cloudinary URL
+    }]
+  },
   isActive: {
     type: Boolean,
     default: true
