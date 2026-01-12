@@ -1,4 +1,4 @@
-// backend/src/controllers/taskController.js - ✅ UPDATED: Multiple Sections Support
+// backend/src/controllers/taskController.js - ✅ UPDATED: Multiple Sections Support + Provider-based uploads
 import Task from "../models/Task.js";
 import User from "../models/User.js";
 import Client from "../models/Client.js";
@@ -9,6 +9,7 @@ import {
   notifyTaskCompletion,
   notifyFeedback,
 } from "../services/notificationService.js";
+import { deleteFile } from "../services/uploadService.js";
 import mongoose from "mongoose";
 
 /**
@@ -244,7 +245,7 @@ export const createTask = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(client)) {
       return res.status(400).json({
         success: false,
-        message: "One or more sections do not belong to this site",
+        message: "Invalid client ID provided",
       });
     }
 
@@ -573,13 +574,10 @@ export const updateTask = async (req, res) => {
     if (req.body.deleteVoiceRecording === "true") {
       updateData.voiceRecording = { url: null, publicId: null };
       
-      // Delete old from Cloudinary
+      // Delete old voice recording from storage
       if (task.voiceRecording && task.voiceRecording.publicId) {
         try {
-          const { v2: cloudinary } = await import("cloudinary");
-          await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
-            resource_type: "video",
-          });
+          await deleteFile(task.voiceRecording.publicId, "video");
         } catch (err) {
           console.error("Failed to delete old voice recording:", err);
         }
@@ -593,13 +591,10 @@ export const updateTask = async (req, res) => {
         publicId: req.file.cloudinaryId,
       };
 
-      // Delete old from Cloudinary if replacing
+      // Delete old voice recording if replacing
       if (task.voiceRecording && task.voiceRecording.publicId) {
         try {
-          const { v2: cloudinary } = await import("cloudinary");
-          await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
-            resource_type: "video",
-          });
+          await deleteFile(task.voiceRecording.publicId, "video");
         } catch (err) {
           console.error("Failed to delete old voice recording:", err);
         }
@@ -656,16 +651,13 @@ export const deleteTask = async (req, res) => {
       });
     }
 
-    // Delete voice recording from Cloudinary
+    // Delete voice recording from storage
     if (task.voiceRecording && task.voiceRecording.publicId) {
       try {
-        const { v2: cloudinary } = await import("cloudinary");
-        await cloudinary.uploader.destroy(task.voiceRecording.publicId, {
-          resource_type: "video",
-        });
-        console.log("🗑️ Voice recording deleted from Cloudinary");
+        await deleteFile(task.voiceRecording.publicId, "video");
+        console.log("🗑️ Voice recording deleted from storage");
       } catch (err) {
-        console.error("Failed to delete voice recording from Cloudinary:", err);
+        console.error("Failed to delete voice recording from storage:", err);
       }
     }
 

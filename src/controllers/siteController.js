@@ -35,7 +35,7 @@ export const getAllSites = async (req, res) => {
     }
 
     const sites = await Site.find(query)
-      .populate("client", "name email phone")
+      .populate("client", "_id name email phone")
       .sort(sort)
       .limit(limit * 1)
       .skip((page - 1) * limit)
