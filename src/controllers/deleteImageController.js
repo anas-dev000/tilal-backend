@@ -1,5 +1,6 @@
 // backend/src/controllers/deleteImageController.js
-import { v2 as cloudinary } from "cloudinary";
+// REFACTORED: Uses provider-based deletion for Cloudinary/Local storage
+import { deleteFile } from "../services/uploadService.js";
 import Site from "../models/Site.js";
 import Task from "../models/Task.js";
 import mongoose from "mongoose";
@@ -45,14 +46,11 @@ export const deleteImage = async (req, res) => {
     }
 
     try {
-      await cloudinary.uploader.destroy(cloudinaryId, {
-        resource_type: resourceType,
-        invalidate: true,
-      });
-      console.log(`🗑️ Deleted from Cloudinary: ${cloudinaryId}`);
-    } catch (cloudinaryError) {
-      console.error("⚠️ Cloudinary deletion error:", cloudinaryError);
-      // Continue to delete from database even if Cloudinary fails
+      await deleteFile(cloudinaryId, resourceType);
+      console.log(`🗑️ Deleted from storage: ${cloudinaryId}`);
+    } catch (storageError) {
+      console.error("⚠️ Storage deletion error:", storageError);
+      // Continue to delete from database even if storage deletion fails
     }
 
     let result;

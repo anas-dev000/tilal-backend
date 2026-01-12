@@ -1,27 +1,27 @@
-// backend/src/middleware/upload.js - ✅ UPDATED: Support Videos
+// backend/src/middleware/upload.js - REFACTORED: Provider-based upload system
+/**
+ * Upload Middleware
+ * 
+ * Uses a provider-based system to support multiple storage backends.
+ * Switch between providers using UPLOAD_PROVIDER environment variable:
+ *   - UPLOAD_PROVIDER=cloudinary (default)
+ *   - UPLOAD_PROVIDER=local
+ */
 import multer from "multer";
-import { v2 as cloudinary } from "cloudinary";
-import streamifier from "streamifier";
+import { uploadFile, uploadMultipleFiles, deleteFile } from "../services/uploadService.js";
 
-// ✅ Cloudinary Configuration
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "dms7inqwd",
-  api_key: process.env.CLOUDINARY_API_KEY || "337142537941378",
-  api_secret:
-    process.env.CLOUDINARY_API_SECRET || "PR3IR1wd6uc0lVh_jU_t8GVVmKY",
-});
-
-// ✅ Memory storage for Cloudinary
+// Memory storage for processing before upload
 const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // ✅ 100MB for videos
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB for videos
   fileFilter: (req, file, cb) => {
-    // 🛑 DEBUGING: Allow everything to see if filter is the issue
+    // DEBUG: Allow everything to see if filter is the issue
     console.log("🔍 DEBUG: fileFilter checking:", file.originalname, file.mimetype);
     return cb(null, true);
 
+    // Uncomment below for production file filtering:
     // const allowedImageTypes = /jpeg|jpg|png|gif|webp/;
     // const allowedVideoTypes = /mp4|mov|avi|mkv|webm/;
     // const allowedAudioTypes = /mp3|wav|ogg|webm|m4a|mpeg/;
@@ -42,50 +42,12 @@ const upload = multer({
   },
 });
 
-// ✅ Upload to Cloudinary (Images, Videos or Audio)
-const uploadToCloudinary = (fileBuffer, folder = "garden-ms", mimetype) => {
-  return new Promise((resolve, reject) => {
-    const isVideo = mimetype.startsWith('video/');
-    const isAudio = mimetype.startsWith('audio/');
-    
-    // Robust PDF detection
-    const isPdf = mimetype === 'application/pdf' || 
-                  mimetype === 'application/x-pdf' || 
-                  mimetype === 'application/acrobat' || 
-                  mimetype === 'application/vnd.pdf' || 
-                  mimetype === 'text/pdf';
-
-    const uploadOptions = {
-      folder,
-      resource_type: (isVideo || isAudio) ? 'video' : isPdf ? 'image' : 'auto', 
-      // For PDFs as 'image', Cloudinary makes them viewable.
-    };
-
-    // ✅ Only apply transformations to real images (not videos, audio or PDFs)
-    if (!isVideo && !isAudio && !isPdf) {
-      uploadOptions.transformation = [
-        { width: 1280, crop: "limit" },
-        { quality: "auto:low" },
-        { fetch_format: "webp" },
-      ];
-    }
-
-    const stream = cloudinary.uploader.upload_stream(
-      uploadOptions,
-      (error, result) => {
-        if (error) {
-          console.error("Cloudinary upload error:", error);
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      }
-    );
-    streamifier.createReadStream(fileBuffer).pipe(stream);
-  });
-};
-
-// ✅ Single file upload
+/**
+ * Upload a single file using the configured provider
+ * @param {string} fieldName - Form field name
+ * @param {string} folder - Target folder in storage
+ * @returns {Array} Multer middleware + upload handler
+ */
 export const uploadSingle = (fieldName, folder = "general") => [
   upload.single(fieldName),
   async (req, res, next) => {
@@ -96,19 +58,26 @@ export const uploadSingle = (fieldName, folder = "general") => [
       
       if (!req.file) return next();
 
-      console.log("📤 Uploading to Cloudinary...");
-      const result = await uploadToCloudinary(
-        req.file.buffer, 
-        folder, 
-        req.file.mimetype
-      );
+      console.log(`📤 Uploading to ${process.env.UPLOAD_PROVIDER || 'cloudinary'}...`);
+      
+      const result = await uploadFile(req.file.buffer, {
+        folder,
+        mimetype: req.file.mimetype,
+        filename: req.file.originalname
+      });
 
-      req.file.cloudinaryUrl = result.secure_url;
-      req.file.cloudinaryId = result.public_id;
-      req.file.resourceType = result.resource_type; // ✅ 'image' or 'video'
+      // Attach result to req.file for controller access
+      // Using both old field names (cloudinaryUrl/cloudinaryId) for backward compatibility
+      // and new field names (url/publicId) for future code
+      req.file.cloudinaryUrl = result.url;
+      req.file.cloudinaryId = result.publicId;
+      req.file.url = result.url;
+      req.file.publicId = result.publicId;
+      req.file.resourceType = result.resourceType;
       req.file.format = result.format;
+      req.file.provider = result.provider;
 
-      console.log(`✅ Upload successful (${result.resource_type}):`, result.secure_url);
+      console.log(`✅ Upload successful (${result.resourceType}):`, result.url);
       next();
     } catch (error) {
       console.error("❌ Upload failed:", error);
@@ -117,29 +86,41 @@ export const uploadSingle = (fieldName, folder = "general") => [
   },
 ];
 
-// ✅ Multiple files upload
+/**
+ * Upload multiple files using the configured provider
+ * @param {string} fieldName - Form field name
+ * @param {number} maxCount - Maximum number of files
+ * @param {string} folder - Target folder in storage
+ * @returns {Array} Multer middleware + upload handler
+ */
 export const uploadMultiple = (fieldName, maxCount = 50, folder = "tasks") => [
   upload.array(fieldName, maxCount),
   async (req, res, next) => {
     try {
       if (!req.files || req.files.length === 0) return next();
 
-      console.log(`📤 Uploading ${req.files.length} files to Cloudinary...`);
+      console.log(`📤 Uploading ${req.files.length} files to ${process.env.UPLOAD_PROVIDER || 'cloudinary'}...`);
 
-      const uploadPromises = req.files.map((file) =>
-        uploadToCloudinary(file.buffer, folder, file.mimetype)
-      );
+      const filesToUpload = req.files.map(file => ({
+        buffer: file.buffer,
+        mimetype: file.mimetype,
+        originalname: file.originalname
+      }));
 
-      const results = await Promise.all(uploadPromises);
+      const results = await uploadMultipleFiles(filesToUpload, folder);
 
+      // Transform results to match expected format
+      // Keep backward compatibility with cloudinaryId field name
       req.files = results.map((result) => ({
-        url: result.secure_url,
-        cloudinaryId: result.public_id,
-        resourceType: result.resource_type, // ✅ 'image' or 'video'
+        url: result.url,
+        cloudinaryId: result.publicId,
+        publicId: result.publicId,
+        resourceType: result.resourceType,
         format: result.format,
         width: result.width,
         height: result.height,
-        duration: result.duration, // ✅ For videos
+        duration: result.duration,
+        provider: result.provider
       }));
 
       console.log("✅ All files uploaded successfully");
@@ -151,23 +132,31 @@ export const uploadMultiple = (fieldName, maxCount = 50, folder = "tasks") => [
   },
 ];
 
-// ✅ Named fields upload (for Worker Profile)
+/**
+ * Upload named fields using the configured provider (for Worker Profile, etc.)
+ * @param {Array} fields - Array of field configs [{name: 'fieldName', maxCount: 1}]
+ * @param {string} folder - Target folder in storage
+ * @returns {Array} Multer middleware + upload handler
+ */
 export const uploadFields = (fields, folder = "workers") => [
   upload.fields(fields),
   async (req, res, next) => {
     try {
       if (!req.files || Object.keys(req.files).length === 0) return next();
 
-      console.log(`📤 Uploading named fields to Cloudinary...`);
+      console.log(`📤 Uploading named fields to ${process.env.UPLOAD_PROVIDER || 'cloudinary'}...`);
 
       // req.files is an object where key is fieldname and value is array of files
-      // We need to iterate over keys and then over files
       const uploadPromises = [];
 
       Object.keys(req.files).forEach((fieldName) => {
         req.files[fieldName].forEach((file) => {
           uploadPromises.push(
-            uploadToCloudinary(file.buffer, folder, file.mimetype).then((result) => ({
+            uploadFile(file.buffer, {
+              folder,
+              mimetype: file.mimetype,
+              filename: file.originalname
+            }).then((result) => ({
               fieldName,
               result,
               originalFile: file
@@ -178,28 +167,23 @@ export const uploadFields = (fields, folder = "workers") => [
 
       const results = await Promise.all(uploadPromises);
 
-      // Attach results back to req.files or a new property for easier access
-      // Let's modify req.files to contain useful info
-      
-      // Initialize an object to store results nicely if not strictly following multer structure
+      // Initialize an object to store results for easier access
       req.uploadedFiles = {};
 
       results.forEach(({ fieldName, result, originalFile }) => {
-        // Since we likely have maxCount: 1 for these fields, we can just store the single result
-        // But to be safe if multiple were somehow allowed, we could use array. 
-        // For this specific use case (profile, residence, etc.), we usually just want one.
-        
-        // We'll attach the cloudinary URL and details to the file object in req.files[fieldName]
+        // Attach the URL and details to the file object in req.files[fieldName]
         const fileIndex = req.files[fieldName].findIndex(f => f.originalname === originalFile.originalname);
         if (fileIndex !== -1) {
-             req.files[fieldName][fileIndex].cloudinaryUrl = result.secure_url;
-             req.files[fieldName][fileIndex].cloudinaryId = result.public_id;
-             req.files[fieldName][fileIndex].resourceType = result.resource_type;
+          req.files[fieldName][fileIndex].cloudinaryUrl = result.url;
+          req.files[fieldName][fileIndex].cloudinaryId = result.publicId;
+          req.files[fieldName][fileIndex].url = result.url;
+          req.files[fieldName][fileIndex].publicId = result.publicId;
+          req.files[fieldName][fileIndex].resourceType = result.resourceType;
+          req.files[fieldName][fileIndex].provider = result.provider;
         }
 
         // Also populate a simple key-value map for easier controller usage
-        // e.g., req.uploadedFiles['profilePicture'] = "url..."
-        req.uploadedFiles[fieldName] = result.secure_url;
+        req.uploadedFiles[fieldName] = result.url;
       });
 
       console.log("✅ All named files uploaded successfully");
@@ -211,7 +195,20 @@ export const uploadFields = (fields, folder = "workers") => [
   },
 ];
 
-// ✅ Error handler
+/**
+ * Delete a file using the configured provider
+ * Exported for use in controllers
+ * @param {string} publicId - File identifier
+ * @param {string} resourceType - 'image', 'video', or 'raw'
+ * @returns {Promise<boolean>}
+ */
+export const deleteUploadedFile = async (publicId, resourceType = 'image') => {
+  return deleteFile(publicId, resourceType);
+};
+
+/**
+ * Error handler for upload errors
+ */
 export const handleUploadError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_FILE_SIZE") {
