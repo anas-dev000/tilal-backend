@@ -133,6 +133,69 @@ export const uploadMultiple = (fieldName, maxCount = 50, folder = "tasks") => [
 ];
 
 /**
+ * Upload named fields using the configured provider (for Worker Profile, etc.)
+ * @param {Array} fields - Array of field configs [{name: 'fieldName', maxCount: 1}]
+ * @param {string} folder - Target folder in storage
+ * @returns {Array} Multer middleware + upload handler
+ */
+export const uploadFields = (fields, folder = "workers") => [
+  upload.fields(fields),
+  async (req, res, next) => {
+    try {
+      if (!req.files || Object.keys(req.files).length === 0) return next();
+
+      console.log(`📤 Uploading named fields to ${process.env.UPLOAD_PROVIDER || 'cloudinary'}...`);
+
+      // req.files is an object where key is fieldname and value is array of files
+      const uploadPromises = [];
+
+      Object.keys(req.files).forEach((fieldName) => {
+        req.files[fieldName].forEach((file) => {
+          uploadPromises.push(
+            uploadFile(file.buffer, {
+              folder,
+              mimetype: file.mimetype,
+              filename: file.originalname
+            }).then((result) => ({
+              fieldName,
+              result,
+              originalFile: file
+            }))
+          );
+        });
+      });
+
+      const results = await Promise.all(uploadPromises);
+
+      // Initialize an object to store results for easier access
+      req.uploadedFiles = {};
+
+      results.forEach(({ fieldName, result, originalFile }) => {
+        // Attach the URL and details to the file object in req.files[fieldName]
+        const fileIndex = req.files[fieldName].findIndex(f => f.originalname === originalFile.originalname);
+        if (fileIndex !== -1) {
+          req.files[fieldName][fileIndex].cloudinaryUrl = result.url;
+          req.files[fieldName][fileIndex].cloudinaryId = result.publicId;
+          req.files[fieldName][fileIndex].url = result.url;
+          req.files[fieldName][fileIndex].publicId = result.publicId;
+          req.files[fieldName][fileIndex].resourceType = result.resourceType;
+          req.files[fieldName][fileIndex].provider = result.provider;
+        }
+
+        // Also populate a simple key-value map for easier controller usage
+        req.uploadedFiles[fieldName] = result.url;
+      });
+
+      console.log("✅ All named files uploaded successfully");
+      next();
+    } catch (error) {
+      console.error("❌ Upload fields failed:", error);
+      next(error);
+    }
+  },
+];
+
+/**
  * Delete a file using the configured provider
  * Exported for use in controllers
  * @param {string} publicId - File identifier

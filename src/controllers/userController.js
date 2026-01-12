@@ -87,6 +87,33 @@ export const getUser = async (req, res) => {
  */
 export const createUser = async (req, res) => {
   try {
+    // ✅ Handle File Uploads (Worker Profile)
+    if (req.uploadedFiles) {
+      if (req.uploadedFiles.profilePicture) {
+        req.body.profilePicture = req.uploadedFiles.profilePicture;
+      }
+      if (req.uploadedFiles.contractPdf) {
+         req.body.contractPdf = req.uploadedFiles.contractPdf;
+      }
+
+      // Initialize documents object
+      req.body.documents = req.body.documents || {};
+      
+      // Single files
+      if (req.uploadedFiles.residencePhoto) req.body.documents.residence = req.uploadedFiles.residencePhoto;
+      if (req.uploadedFiles.licensePhoto) req.body.documents.license = req.uploadedFiles.licensePhoto;
+      if (req.uploadedFiles.idPhoto) req.body.documents.identity = req.uploadedFiles.idPhoto;
+      
+      // Multiple files (otherFiles)
+      // We need to access the array from req.files because req.uploadedFiles might only have one URL
+      if (req.files && req.files.otherFiles) {
+         req.body.documents.files = req.files.otherFiles.map(file => ({
+           name: file.originalname,
+           url: file.cloudinaryUrl
+         }));
+      }
+    }
+
     const user = await User.create(req.body);
 
     // Update branch worker count if worker
@@ -120,9 +147,82 @@ export const updateUser = async (req, res) => {
     // Don't allow password update through this route
     delete req.body.password;
 
+    // ✅ Handle File Uploads (Worker Profile)
+    const updateOperations = { ...req.body };
+    // Remove complex fields from direct set if handled separately
+    delete updateOperations.documents; 
+
+    // Initialize $set for specific document fields
+    const setOperations = {};
+
+    // ✅ Handle File Removals (Explicit flags) - Single fields
+    // Place this BEFORE file uploads so uploads can overwrite "null" if replacing
+    if (req.body.remove_profilePicture === 'true') setOperations.profilePicture = null;
+    if (req.body.remove_contractPdf === 'true') setOperations.contractPdf = null;
+    if (req.body.remove_residencePhoto === 'true') setOperations['documents.residence'] = null;
+    if (req.body.remove_licensePhoto === 'true') setOperations['documents.license'] = null;
+    if (req.body.remove_idPhoto === 'true') setOperations['documents.identity'] = null;
+
+    if (req.uploadedFiles) {
+      if (req.uploadedFiles.profilePicture) {
+        setOperations.profilePicture = req.uploadedFiles.profilePicture;
+      }
+      if (req.uploadedFiles.contractPdf) {
+        setOperations.contractPdf = req.uploadedFiles.contractPdf;
+      }
+      
+      if (req.uploadedFiles.residencePhoto) setOperations['documents.residence'] = req.uploadedFiles.residencePhoto;
+      if (req.uploadedFiles.licensePhoto) setOperations['documents.license'] = req.uploadedFiles.licensePhoto;
+      if (req.uploadedFiles.idPhoto) setOperations['documents.identity'] = req.uploadedFiles.idPhoto;
+      
+      // Handle Multiple Files (Append)
+      if (req.files && req.files.otherFiles) {
+         const newFiles = req.files.otherFiles.map(file => ({
+           name: file.originalname,
+           url: file.cloudinaryUrl
+         }));
+         
+         // Use $push to add new files
+         updateOperations['$push'] = { 'documents.files': { $each: newFiles } };
+      }
+    }
+
+    // ✅ Handle Additional Files Removal (Pull from array)
+    if (req.body.remove_otherFiles) {
+        let filesToRemove = req.body.remove_otherFiles;
+        if (!Array.isArray(filesToRemove)) {
+            filesToRemove = [filesToRemove];
+        }
+        
+        // Execute Pull separately to avoid conflict with $push on same path ('documents.files')
+        if (filesToRemove.length > 0) {
+            await User.findByIdAndUpdate(req.params.id, {
+                $pull: { 'documents.files': { url: { $in: filesToRemove } } }
+            });
+        }
+    }
+
+
+    // Merge setOperations into updateOperations direct keys (which are $set in Mongoose default, 
+    // BUT since we are mixing with $push, we must be careful. 
+    // findByIdAndUpdate(id, update, ...) -> if update has $ keys, non-$ keys are ignored or need to be inside $set?
+    // Mongoose: if top level has $-keys, then non-$ keys are strictly ignored or throw?
+    // Actually, usually you wrap everything in $set if you use any $ operator.
+    
+    // Let's safe-guard:
+    // Move all non-$ keys to $set
+    updateOperations['$set'] = { ...setOperations };
+    
+    // Also move original req.body fields (text) to $set if they are not there
+    Object.keys(req.body).forEach(key => {
+        if (key !== 'documents' && key !== 'password') {
+            updateOperations['$set'][key] = req.body[key];
+        }
+    });
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateOperations,
       { new: true, runValidators: true }
     ).select('-password');
 
