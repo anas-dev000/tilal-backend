@@ -76,9 +76,16 @@ app.options("*", cors(corsOptions));
 app.use(
   helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    contentSecurityPolicy: false,
+    frameguard: false,
   })
 );
+
 app.use(mongoSanitize());
+app.use((req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  next();
+});
 
 // =====================================
 // 🚦 Rate Limiting
@@ -103,14 +110,31 @@ app.use(compression());
 if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 
 // =====================================
-// 📁 Static Files
+// 📁 Static Files & CORS for Uploads
 // =====================================
+app.use("/uploads", (req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Cross-Origin-Resource-Policy", "cross-origin");
+  
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(
   "/uploads",
   express.static("uploads", {
-    setHeaders: (res) => {
-      res.set("Access-Control-Allow-Origin", "*");
-      res.set("Cross-Origin-Resource-Policy", "cross-origin");
+    setHeaders: (res, filePath) => {
+      if (filePath.toLowerCase().endsWith(".pdf")) {
+        console.log(`📄 Serving PDF: ${filePath}`);
+        res.set("Content-Type", "application/pdf");
+        res.set("Content-Disposition", "inline");
+        // Extra hint to browsers to not download
+        res.set("X-Content-Type-Options", "nosniff");
+      }
     },
   })
 );

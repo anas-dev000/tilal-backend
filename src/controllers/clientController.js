@@ -4,6 +4,7 @@ import { generateToken } from '../utils/jwt.js';
 import crypto from 'crypto';
 import { notifyClientCredentials } from '../services/notificationService.js';
 import { v2 as cloudinary } from "cloudinary";
+import { deleteFile } from "../services/uploadService.js";
 
 /**
  *   UNIFIED: Client login using standard JWT
@@ -259,7 +260,7 @@ export const updateClient = async (req, res) => {
     if (req.file && req.file.cloudinaryUrl) {
       if (client.contractPdf?.cloudinaryId) {
         try {
-          await cloudinary.uploader.destroy(client.contractPdf.cloudinaryId);
+          await deleteFile(client.contractPdf.cloudinaryId, 'raw');
         } catch (err) {
           console.error("Failed to delete old contract PDF:", err);
         }
@@ -269,6 +270,18 @@ export const updateClient = async (req, res) => {
         url: req.file.cloudinaryUrl,
         cloudinaryId: req.file.cloudinaryId
       };
+    } 
+    // ✅ Handle PDF Removal (Explicit flag)
+    else if (updateData.remove_contractPdf === 'true') {
+      if (client.contractPdf?.cloudinaryId) {
+        try {
+          await deleteFile(client.contractPdf.cloudinaryId, 'raw');
+          console.log("🗑️ Deleted contract PDF using uploadService");
+        } catch (err) {
+          console.error("Failed to delete contract PDF during removal:", err);
+        }
+      }
+      updateData.contractPdf = null;
     }
 
     client = await Client.findByIdAndUpdate(
