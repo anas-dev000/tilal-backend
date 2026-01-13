@@ -216,7 +216,7 @@ const startServer = async () => {
     initSocket(httpServer);
 
     // Start Cron Jobs
-    startCronJobs();
+    await startCronJobs();
 
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`
