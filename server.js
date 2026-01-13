@@ -199,17 +199,17 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 if (process.env.NODE_ENV !== "production") {
-  httpServer.listen(PORT, () => {
-    console.log(`
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log(`
 ╔═══════════════════════════════════════════════════════╗
 ║   🌿 Garden Management System API                    ║
-║   Running in ${process.env.NODE_ENV} mode             ║
-║   📡 http://localhost:${PORT}                         ║
-║   🏥 /health                                           ║
-║   🔌 WebSocket: Enabled (Socket.io)                   ║
+║   Mode: ${process.env.NODE_ENV || "unknown"}         ║
+║   Port: ${PORT}                                      ║
+║   🏥 /health                                         ║
+║   🔌 WebSocket: Enabled                              ║
 ╚═══════════════════════════════════════════════════════╝
-    `);
-  });
+  `);
+});
 
   process.on("unhandledRejection", (err) => {
     console.error(`❌ Unhandled Rejection: ${err.message}`);
