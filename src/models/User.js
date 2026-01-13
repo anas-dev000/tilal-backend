@@ -46,11 +46,13 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  profilePictureProvider: { type: String, default: "cloudinary" },
   // ✅ Contract PDF
   contractPdf: {
     type: String, // URL to the PDF
     default: null
   },
+  contractPdfProvider: { type: String, default: "cloudinary" },
   // ✅ Worker Documents
   documents: {
     residence: { type: String, default: null },
@@ -59,7 +61,8 @@ const userSchema = new mongoose.Schema({
     // Replaced single contract with multiple files
     files: [{
       name: String, // Original filename
-      url: String   // Cloudinary URL
+      url: String,   // Cloudinary URL
+      provider: { type: String, default: "cloudinary" }
     }]
   },
   isActive: {

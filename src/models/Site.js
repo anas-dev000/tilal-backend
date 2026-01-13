@@ -38,6 +38,7 @@ const sectionSchema = new mongoose.Schema(
           default: 1,
         },
         description: String,
+        provider: { type: String, default: "cloudinary" },
       },
     ],
     status: {
@@ -111,6 +112,7 @@ const siteSchema = new mongoose.Schema(
     coverImage: {
       url: String,
       cloudinaryId: String,
+      provider: { type: String, default: "cloudinary" },
     },
     description: {
       type: String,

@@ -47,13 +47,29 @@ export const uploadMultipleFiles = async (files, folder) => {
  * @param {string} [resourceType='image'] - Resource type
  * @returns {Promise<boolean>} True if successful
  */
-export const deleteFile = async (publicId, resourceType = 'image') => {
+export const deleteFile = async (publicId, resourceType = 'image', providerName = null) => {
   if (!publicId) {
     console.warn('⚠️ No publicId provided for deletion');
     return false;
   }
   
-  const provider = getUploadProvider();
+  let provider;
+  if (providerName) {
+    // If provider is specified (e.g. from DB), use that specific provider
+    console.log(`🗑️ Deleting using specified provider: ${providerName}`);
+    try {
+      // Need to import this dynamically or assume we have a helper
+      const { getProviderByName } = await import('../providers/upload/providerFactory.js');
+      provider = getProviderByName(providerName);
+    } catch (err) {
+      console.warn(`⚠️ Could not get provider '${providerName}', falling back to default. Error: ${err.message}`);
+      provider = getUploadProvider();
+    }
+  } else {
+    // Fallback to configured provider (legacy behavior)
+    provider = getUploadProvider();
+  }
+
   return provider.delete(publicId, resourceType);
 };
 

@@ -121,7 +121,8 @@ const clientSchema = new mongoose.Schema({
   // ✅ NEW: Contract PDF
   contractPdf: {
     url: String,
-    cloudinaryId: String
+    cloudinaryId: String,
+    provider: { type: String, default: "cloudinary" },
   }
 }, {
   timestamps: true

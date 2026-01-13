@@ -22,54 +22,38 @@ export const deleteImage = async (req, res) => {
       imageType, // 'before' | 'after' | 'reference' | 'cover' | 'feedback'
     } = req.body;
 
-    if (!cloudinaryId || !entityType || !entityId || !imageType) {
+    if (!cloudinaryId || !entityType || !entityId) {
       return res.status(400).json({
         success: false,
-        message:
-          "Missing required fields: cloudinaryId, entityType, entityId, imageType",
+        message: "Missing required fields: cloudinaryId, entityType, entityId",
       });
     }
 
     if (!["site", "section", "task", "feedback"].includes(entityType)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid entityType. Must be: site, section, task, or feedback",
+        message: "Invalid entityType. Must be: site, section, task, or feedback",
       });
-    }
-
-    if (entityType === "section" && !sectionId) {
-      return res.status(400).json({
-        success: false,
-        message: "sectionId is required for section images",
-      });
-    }
-
-    try {
-      await deleteFile(cloudinaryId, resourceType);
-      console.log(`🗑️ Deleted from storage: ${cloudinaryId}`);
-    } catch (storageError) {
-      console.error("⚠️ Storage deletion error:", storageError);
-      // Continue to delete from database even if storage deletion fails
     }
 
     let result;
 
+    // Use specific handlers which will look up the provider and delete the file
     switch (entityType) {
       case "site":
-        result = await deleteSiteImage(entityId, imageId, imageType);
+        result = await deleteSiteImage(entityId, imageId, imageType, cloudinaryId, resourceType);
         break;
 
       case "section":
-        result = await deleteSectionImage(entityId, sectionId, imageId);
+        result = await deleteSectionImage(entityId, sectionId, imageId, cloudinaryId, resourceType);
         break;
 
       case "task":
-        result = await deleteTaskImage(entityId, imageId, imageType);
+        result = await deleteTaskImage(entityId, imageId, imageType, cloudinaryId, resourceType);
         break;
 
       case "feedback":
-        result = await deleteFeedbackImage(entityId);
+        result = await deleteFeedbackImage(entityId, cloudinaryId, resourceType);
         break;
 
       default:
@@ -101,7 +85,7 @@ export const deleteImage = async (req, res) => {
 // ========================================
 // Delete Site Cover Image
 // ========================================
-const deleteSiteImage = async (siteId, imageId, imageType) => {
+const deleteSiteImage = async (siteId, imageId, imageType, expectedCloudinaryId, resourceType) => {
   try {
     const site = await Site.findById(siteId);
 
@@ -114,10 +98,23 @@ const deleteSiteImage = async (siteId, imageId, imageType) => {
         return { success: false, message: "Cover image not found" };
       }
 
+      // Verify ID matches
+      if (site.coverImage.cloudinaryId !== expectedCloudinaryId) {
+         console.warn(`⚠️ ID mismatch for site cover: requested ${expectedCloudinaryId}, found ${site.coverImage.cloudinaryId}`);
+         // Proceeding anyway or should we block? Proceeding for safety but logging.
+      }
+
+      // Get provider (default to cloudinary if not set)
+      const provider = site.coverImage.provider || 'cloudinary';
+      
+      // Delete from storage
+      await deleteFile(expectedCloudinaryId, resourceType, provider);
+
       // Clear the coverImage object
       site.coverImage = {
         url: undefined,
         cloudinaryId: undefined,
+        provider: undefined,
       };
 
       await site.save();
@@ -139,7 +136,7 @@ const deleteSiteImage = async (siteId, imageId, imageType) => {
 // ========================================
 //  Delete Section Reference Image
 // ========================================
-const deleteSectionImage = async (siteId, sectionId, imageId) => {
+const deleteSectionImage = async (siteId, sectionId, imageId, expectedCloudinaryId, resourceType) => {
   try {
     const site = await Site.findById(siteId);
 
@@ -160,6 +157,12 @@ const deleteSectionImage = async (siteId, sectionId, imageId) => {
     if (imageIndex === -1) {
       return { success: false, message: "Reference image not found" };
     }
+    
+    const imageObj = section.referenceImages[imageIndex];
+    const provider = imageObj.provider || 'cloudinary';
+
+    // Delete from storage
+    await deleteFile(expectedCloudinaryId, resourceType, provider);
 
     section.referenceImages.splice(imageIndex, 1);
     await site.save();
@@ -178,7 +181,7 @@ const deleteSectionImage = async (siteId, sectionId, imageId) => {
 // ========================================
 //  Delete Task Image (Before/After/Reference)
 // ========================================
-const deleteTaskImage = async (taskId, imageId, imageType) => {
+const deleteTaskImage = async (taskId, imageId, imageType, expectedCloudinaryId, resourceType) => {
   try {
     const task = await Task.findById(taskId);
 
@@ -201,6 +204,12 @@ const deleteTaskImage = async (taskId, imageId, imageType) => {
       if (imageIndex === -1) {
         return { success: false, message: "Image not found" };
       }
+      
+      const imageObj = imageArray[imageIndex];
+      const provider = imageObj.provider || 'cloudinary';
+
+      // Delete from storage
+      await deleteFile(expectedCloudinaryId, resourceType, provider);
 
       imageArray.splice(imageIndex, 1);
       await task.save();
@@ -221,6 +230,12 @@ const deleteTaskImage = async (taskId, imageId, imageType) => {
       if (imageIndex === -1) {
         return { success: false, message: "Reference image not found" };
       }
+      
+      const imageObj = task.referenceImages[imageIndex];
+      const provider = imageObj.provider || 'cloudinary';
+
+      // Delete from storage
+      await deleteFile(expectedCloudinaryId, resourceType, provider);
 
       task.referenceImages.splice(imageIndex, 1);
       await task.save();
@@ -242,7 +257,7 @@ const deleteTaskImage = async (taskId, imageId, imageType) => {
 // ========================================
 //  Delete Feedback Image
 // ========================================
-const deleteFeedbackImage = async (taskId) => {
+const deleteFeedbackImage = async (taskId, expectedCloudinaryId, resourceType) => {
   try {
     const task = await Task.findById(taskId);
 
@@ -253,9 +268,16 @@ const deleteFeedbackImage = async (taskId) => {
     if (!task.feedback || !task.feedback.image) {
       return { success: false, message: "No feedback image found" };
     }
+    
+    // Check provider (feedback object or default)
+    const provider = task.feedback.provider || 'cloudinary';
+
+    // Delete from storage
+    await deleteFile(expectedCloudinaryId, resourceType, provider);
 
     task.feedback.image = undefined;
     task.feedback.cloudinaryId = undefined;
+    task.feedback.provider = undefined;
     await task.save();
 
     return {

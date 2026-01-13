@@ -117,6 +117,7 @@ const taskSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now },
         qtn: { type: Number, default: 1 },
         description: String,
+        provider: { type: String, default: "cloudinary" },
         // Keep original section reference for traceability
         originalSectionId: {
           type: mongoose.Schema.Types.ObjectId,
@@ -150,6 +151,7 @@ const taskSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
           },
+          provider: { type: String, default: "cloudinary" },
         },
       ],
       after: [
@@ -176,6 +178,7 @@ const taskSchema = new mongoose.Schema(
             type: Boolean,
             default: false,
           },
+          provider: { type: String, default: "cloudinary" },
         },
       ],
     },
@@ -253,6 +256,7 @@ const taskSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      provider: { type: String, default: "cloudinary" },
     },
 
     // Invoice
