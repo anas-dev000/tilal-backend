@@ -187,9 +187,6 @@ app.use(errorHandler);
 // =====================================
 const PORT = process.env.PORT;
 
-if (!process.env.PORT) {
-  throw new Error("PORT environment variable is missing");
-}
 
 /**
  * Graceful Shutdown Handler
