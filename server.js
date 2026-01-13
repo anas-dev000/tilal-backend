@@ -7,7 +7,6 @@ import helmet from "helmet";
 import morgan from "morgan";
 import compression from "compression";
 import mongoSanitize from "express-mongo-sanitize";
-// import rateLimit from "express-rate-limit";
 import connectDB from "./src/config/database.js";
 import errorHandler from "./src/middleware/errorHandler.js";
 
@@ -29,15 +28,23 @@ import invoiceRoutes from "./src/routes/invoiceRoutes.js";
 // Load environment variables
 dotenv.config();
 
-// Connect to database
-connectDB();
+/**
+ * 🛡️ Global Error Handlers
+ * Prevent the app from crashing silently due to unhandled issues.
+ */
+process.on("uncaughtException", (err) => {
+  console.error("FATAL: Uncaught Exception:", err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("WARNING: Unhandled Rejection at:", promise, "reason:", reason);
+});
 
 // Initialize express app
 const app = express();
 const httpServer = createServer(app);
-
-// Initialize Socket.io
-initSocket(httpServer);
 
 // =====================================
 // 🛡️ CORS Configuration
@@ -88,19 +95,6 @@ app.use((req, res, next) => {
 });
 
 // =====================================
-// 🚦 Rate Limiting
-// =====================================
-// const limiter = rateLimit({
-//   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 10 * 60 * 1000,
-//   max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 10000,
-//   message: "Too many requests from this IP, please try again later",
-//   standardHeaders: true,
-//   legacyHeaders: false,
-//   skip: (req) => req.url.includes("/uploads") || req.url.includes("/health"),
-// });
-// app.use("/api", limiter);
-
-// =====================================
 // 🧩 Middleware
 // =====================================
 app.use(express.json({ limit: "10mb" }));
@@ -129,10 +123,8 @@ app.use(
   express.static("uploads", {
     setHeaders: (res, filePath) => {
       if (filePath.toLowerCase().endsWith(".pdf")) {
-        console.log(`📄 Serving PDF: ${filePath}`);
         res.set("Content-Type", "application/pdf");
         res.set("Content-Disposition", "inline");
-        // Extra hint to browsers to not download
         res.set("X-Content-Type-Options", "nosniff");
       }
     },
@@ -166,7 +158,6 @@ app.get("/health", (req, res) => {
     success: true,
     message: "Server is running",
     timestamp: new Date().toISOString(),
-    cors: "enabled",
   });
 });
 
@@ -175,8 +166,6 @@ app.get("/", (req, res) => {
     success: true,
     message: "Welcome to Garden Management System API",
     version: API_VERSION,
-    documentation: "/api/docs",
-    cors: "enabled",
   });
 });
 
@@ -194,35 +183,60 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // =====================================
-// 🧠 Server Start (Local Only)
+// 🚀 Server Lifecycle
 // =====================================
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT;
 
-if (process.env.NODE_ENV !== "production") {
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`
-╔═══════════════════════════════════════════════════════╗
-║   🌿 Garden Management System API                    ║
-║   Mode: ${process.env.NODE_ENV || "unknown"}         ║
-║   Port: ${PORT}                                      ║
-║   🏥 /health                                         ║
-║   🔌 WebSocket: Enabled                              ║
-╚═══════════════════════════════════════════════════════╝
-  `);
-});
-
-  process.on("unhandledRejection", (err) => {
-    console.error(`❌ Unhandled Rejection: ${err.message}`);
-    httpServer.close(() => process.exit(1));
-  });
-
-  process.on("SIGTERM", () => {
-    console.log("👋 SIGTERM received. Shutting down gracefully...");
-    httpServer.close(() => console.log("✅ Process terminated"));
-  });
+if (!process.env.PORT) {
+  throw new Error("PORT environment variable is missing");
 }
 
-// Load cron jobs (runs once at startup)
-import "./src/utils/cronJobs.js";
-// ✅ مهم جدًا لتعمل على Vercel
+/**
+ * Graceful Shutdown Handler
+ */
+const gracefulShutdown = () => {
+  console.log("👋 SIGTERM/SIGINT received. Shutting down gracefully...");
+  httpServer.close(() => {
+    console.log("✅ Server closed. Process exiting.");
+    process.exit(0);
+  });
+};
+
+process.on("SIGTERM", gracefulShutdown);
+process.on("SIGINT", gracefulShutdown);
+
+/**
+ * Start Server after Database Connection
+ */
+const startServer = async () => {
+  try {
+    console.log("⏳ Connecting to database...");
+    await connectDB();
+    console.log("✅ Database connection established.");
+
+    // Initialize Socket.io (does not block HTTP server listening)
+    initSocket(httpServer);
+
+    // Start Cron Jobs
+    import("./src/utils/cronJobs.js");
+
+    httpServer.listen(PORT, "0.0.0.0", () => {
+      console.log(`
+╔═══════════════════════════════════════════════════════╗
+║   🌿 Garden Management System API                    ║
+║   Host: 0.0.0.0                                      ║
+║   Port: ${PORT}                                      ║
+║   Status: ONLINE (Production Ready)                  ║
+╚═══════════════════════════════════════════════════════╝
+      `);
+    });
+  } catch (error) {
+    console.error("❌ CRITICAL: Failed to start server:", error.message);
+    process.exit(1);
+  }
+};
+
+startServer();
+
 export default app;
+
