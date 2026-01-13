@@ -9,7 +9,7 @@ import compression from "compression";
 import mongoSanitize from "express-mongo-sanitize";
 import connectDB from "./src/config/database.js";
 import errorHandler from "./src/middleware/errorHandler.js";
-import { startCronJobs } from "./src/cronRunner.js";
+// import { startCronJobs } from "./src/cronRunner.js";
 
 // Import routes
 import authRoutes from "./src/routes/authRoutes.js";
@@ -216,7 +216,7 @@ const startServer = async () => {
     initSocket(httpServer);
 
     // Start Cron Jobs
-    await startCronJobs();
+    // await startCronJobs();
 
     httpServer.listen(PORT, "0.0.0.0", () => {
       console.log(`
