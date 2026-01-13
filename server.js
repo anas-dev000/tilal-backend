@@ -188,9 +188,6 @@ app.use(errorHandler);
 // =====================================
 const PORT = process.env.PORT;
 
-if (!process.env.PORT) {
-  throw new Error("PORT environment variable is missing");
-}
 
 /**
  * Graceful Shutdown Handler
@@ -212,8 +209,8 @@ process.on("SIGINT", gracefulShutdown);
 const startServer = async () => {
   try {
     console.log("⏳ Connecting to database...");
-    await connectDB();
-    console.log("✅ Database connection established.");
+    // await connectDB();
+    // console.log("✅ Database connection established.");
 
     // Initialize Socket.io (does not block HTTP server listening)
     initSocket(httpServer);
