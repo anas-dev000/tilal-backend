@@ -1,17 +1,18 @@
 import express from "express";
-import { createServer } from "http";
-import { initSocket } from "./src/config/socket.js";
+import http from "http";
 import dotenv from "dotenv";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
 import compression from "compression";
 import mongoSanitize from "express-mongo-sanitize";
+
 import connectDB from "./src/config/database.js";
 import errorHandler from "./src/middleware/errorHandler.js";
-// import { startCronJobs } from "./src/cronRunner.js";
+import { initSocket } from "./src/config/socket.js";
+import { startCronJobs } from "./src/cronRunner.js";
 
-// Import routes
+// Routes
 import authRoutes from "./src/routes/authRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
 import taskRoutes from "./src/routes/taskRoutes.js";
@@ -26,119 +27,88 @@ import siteRoutes from "./src/routes/siteRoutes.js";
 import accountantRoutes from "./src/routes/accountantRoutes.js";
 import invoiceRoutes from "./src/routes/invoiceRoutes.js";
 
-// Load environment variables
+// ===============================
+// Load Env
+// ===============================
 dotenv.config();
 
-/**
- * 🛡️ Global Error Handlers
- * Prevent the app from crashing silently due to unhandled issues.
- */
-process.on("uncaughtException", (err) => {
-  console.error("FATAL: Uncaught Exception:", err.message);
-  console.error(err.stack);
-  process.exit(1);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("WARNING: Unhandled Rejection at:", promise, "reason:", reason);
-});
-
-// Initialize express app
+// ===============================
+// App & Server
+// ===============================
 const app = express();
-const httpServer = createServer(app);
+const server = http.createServer(app);
 
-// =====================================
-// 🛡️ CORS Configuration
-// =====================================
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    const allowedOrigins = [
-      "http://localhost:5173",
-      "http://localhost:3000",
-      "http://127.0.0.1:5173",
-      "https://tilal.vercel.app",
-      process.env.FRONTEND_URL,
-    ].filter(Boolean);
+// ===============================
+// Safe PORT (Hostinger compatible)
+// ===============================
+const PORT = Number(process.env.PORT) || 3000;
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log("CORS blocked origin:", origin);
-      callback(null, true);
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  exposedHeaders: ["Content-Range", "X-Content-Range"],
-  maxAge: 600,
-};
+// ===============================
+// Global Error Handling (NO EXIT)
+// ===============================
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception:", err);
+});
 
-app.use(cors(corsOptions));
-app.options("*", cors(corsOptions));
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled Rejection:", reason);
+});
 
-// =====================================
-// 🔒 Security Middleware
-// =====================================
+// ===============================
+// CORS
+// ===============================
+app.use(
+  cors({
+    origin: "*",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+app.options("*", cors());
+
+// ===============================
+// Security & Middlewares
+// ===============================
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
     contentSecurityPolicy: false,
-    frameguard: false,
+    crossOriginResourcePolicy: false,
   })
 );
 
 app.use(mongoSanitize());
-app.use((req, res, next) => {
-  res.removeHeader("X-Frame-Options");
-  next();
-});
-
-// =====================================
-// 🧩 Middleware
-// =====================================
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(compression());
 
-if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
+if (process.env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
 
-// =====================================
-// 📁 Static Files & CORS for Uploads
-// =====================================
-app.use("/uploads", (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.header("Cross-Origin-Resource-Policy", "cross-origin");
-  
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
-
+// ===============================
+// Static Uploads (Hostinger safe)
+// ===============================
 app.use(
   "/uploads",
   express.static("uploads", {
-    setHeaders: (res, filePath) => {
-      if (filePath.toLowerCase().endsWith(".pdf")) {
-        res.set("Content-Type", "application/pdf");
-        res.set("Content-Disposition", "inline");
-        res.set("X-Content-Type-Options", "nosniff");
+    setHeaders: (res, path) => {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      if (path.endsWith(".pdf")) {
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline");
       }
     },
   })
 );
 
-// =====================================
-// 🚀 API Routes
-// =====================================
+// ===============================
+// API Routes
+// ===============================
 const API_VERSION = process.env.API_VERSION || "v1";
 
 app.use(`/api/${API_VERSION}/auth`, authRoutes);
-app.use(`/api/${API_VERSION}/delete-image`, deleteImageRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes);
 app.use(`/api/${API_VERSION}/tasks`, taskRoutes);
 app.use(`/api/${API_VERSION}/clients`, clientRoutes);
@@ -148,93 +118,81 @@ app.use(`/api/${API_VERSION}/inventory`, inventoryRoutes);
 app.use(`/api/${API_VERSION}/reports`, reportRoutes);
 app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
 app.use(`/api/${API_VERSION}/uploads`, uploadRoutes);
+app.use(`/api/${API_VERSION}/delete-image`, deleteImageRoutes);
 app.use(`/api/${API_VERSION}/accountant`, accountantRoutes);
 app.use(`/api/${API_VERSION}/invoices`, invoiceRoutes);
 
-// =====================================
-// 💓 Health & Root
-// =====================================
+// ===============================
+// Health Check
+// ===============================
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: "Server is running",
-    timestamp: new Date().toISOString(),
+    status: "OK",
+    uptime: process.uptime(),
   });
 });
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
-    message: "Welcome to Garden Management System API",
+    message: "Garden Management API Running",
     version: API_VERSION,
   });
 });
 
-// =====================================
-// ❌ 404 & Error Handling
-// =====================================
+// ===============================
+// 404
+// ===============================
 app.use((req, res) => {
   res.status(404).json({
     success: false,
     message: "Route not found",
-    path: req.originalUrl,
   });
 });
 
+// ===============================
+// Error Handler
+// ===============================
 app.use(errorHandler);
 
-// =====================================
-// 🚀 Server Lifecycle
-// =====================================
-const PORT = process.env.PORT;
-
-
-/**
- * Graceful Shutdown Handler
- */
-const gracefulShutdown = () => {
-  console.log("👋 SIGTERM/SIGINT received. Shutting down gracefully...");
-  httpServer.close(() => {
-    console.log("✅ Server closed. Process exiting.");
-    process.exit(0);
-  });
-};
-
-process.on("SIGTERM", gracefulShutdown);
-process.on("SIGINT", gracefulShutdown);
-
-/**
- * Start Server after Database Connection
- */
+// ===============================
+// Start Server (Hostinger Safe Flow)
+// ===============================
 const startServer = async () => {
   try {
-    console.log("⏳ Connecting to database...");
-    await connectDB();
-    console.log("✅ Database connection established.");
+    // DB (non-blocking crash)
+    try {
+      await connectDB();
+      console.log("✅ Database connected");
+    } catch (dbError) {
+      console.error("⚠️ Database connection failed:", dbError.message);
+    }
 
-    // Initialize Socket.io (does not block HTTP server listening)
-    initSocket(httpServer);
-
-    // Start Cron Jobs
-    // await startCronJobs();
-
-    httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`
-╔═══════════════════════════════════════════════════════╗
-║   🌿 Garden Management System API                    ║
-║   Host: 0.0.0.0                                      ║
-║   Port: ${PORT}                                      ║
-║   Status: ONLINE (Production Ready)                  ║
-╚═══════════════════════════════════════════════════════╝
-      `);
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${PORT}`);
     });
+
+    // Optional services AFTER server start
+    try {
+      initSocket(server);
+      console.log("🔌 Socket.io initialized");
+    } catch (e) {
+      console.warn("⚠️ Socket.io disabled:", e.message);
+    }
+
+    try {
+      await startCronJobs();
+      console.log("⏰ Cron jobs started");
+    } catch (e) {
+      console.warn("⚠️ Cron jobs failed:", e.message);
+    }
+
   } catch (error) {
-    console.error("❌ CRITICAL: Failed to start server:", error.message);
-    process.exit(1);
+    console.error("❌ Server failed to start:", error);
   }
 };
 
 startServer();
 
 export default app;
-
