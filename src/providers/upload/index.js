@@ -5,4 +5,5 @@
 export { default as BaseUploadProvider } from './BaseUploadProvider.js';
 export { default as CloudinaryProvider } from './CloudinaryProvider.js';
 export { default as LocalProvider } from './LocalProvider.js';
+export { default as HttpStorageProvider } from './HttpStorageProvider.js';
 export { getUploadProvider, getProviderByName } from './providerFactory.js';

@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import Branch from '../models/Branch.js';
+import { deleteUploadedFile } from '../middleware/upload.js';
 
 /**
  * @desc    Get all users
@@ -88,29 +89,42 @@ export const getUser = async (req, res) => {
 export const createUser = async (req, res) => {
   try {
     // ✅ Handle File Uploads (Worker Profile)
-    if (req.uploadedFiles) {
-      if (req.uploadedFiles.profilePicture) {
-        req.body.profilePicture = req.uploadedFiles.profilePicture;
+    if (req.files) {
+      // Profile Picture
+      if (req.files.profilePicture && req.files.profilePicture[0]) {
+        const file = req.files.profilePicture[0];
+        req.body.profilePicture = file.url;
+        req.body.profilePictureProvider = file.provider;
       }
-      if (req.uploadedFiles.contractPdf) {
-         req.body.contractPdf = req.uploadedFiles.contractPdf;
+
+      // Contract PDF
+      if (req.files.contractPdf && req.files.contractPdf[0]) {
+        const file = req.files.contractPdf[0];
+        req.body.contractPdf = file.url;
+        req.body.contractPdfProvider = file.provider;
       }
 
       // Initialize documents object
       req.body.documents = req.body.documents || {};
       
-      // Single files
-      if (req.uploadedFiles.residencePhoto) req.body.documents.residence = req.uploadedFiles.residencePhoto;
-      if (req.uploadedFiles.licensePhoto) req.body.documents.license = req.uploadedFiles.licensePhoto;
-      if (req.uploadedFiles.idPhoto) req.body.documents.identity = req.uploadedFiles.idPhoto;
+      // Single fields (residence, license, identity)
+      if (req.files.residencePhoto && req.files.residencePhoto[0]) {
+        req.body.documents.residence = req.files.residencePhoto[0].url;
+      }
+      if (req.files.licensePhoto && req.files.licensePhoto[0]) {
+        req.body.documents.license = req.files.licensePhoto[0].url;
+      }
+      if (req.files.idPhoto && req.files.idPhoto[0]) {
+        req.body.documents.identity = req.files.idPhoto[0].url;
+      }
       
       // Multiple files (otherFiles)
-      // We need to access the array from req.files because req.uploadedFiles might only have one URL
-      if (req.files && req.files.otherFiles) {
-         req.body.documents.files = req.files.otherFiles.map(file => ({
-           name: file.originalname,
-           url: file.cloudinaryUrl
-         }));
+      if (req.files.otherFiles) {
+        req.body.documents.files = req.files.otherFiles.map(file => ({
+          name: file.originalname,
+          url: file.url,
+          provider: file.provider
+        }));
       }
     }
 
@@ -163,28 +177,89 @@ export const updateUser = async (req, res) => {
     if (req.body.remove_licensePhoto === 'true') setOperations['documents.license'] = null;
     if (req.body.remove_idPhoto === 'true') setOperations['documents.identity'] = null;
 
-    if (req.uploadedFiles) {
-      if (req.uploadedFiles.profilePicture) {
-        setOperations.profilePicture = req.uploadedFiles.profilePicture;
+    if (req.files) {
+      // Find the existing user to get old file IDs for deletion
+      const user = await User.findById(req.params.id);
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
       }
-      if (req.uploadedFiles.contractPdf) {
-        setOperations.contractPdf = req.uploadedFiles.contractPdf;
+
+      // Profile Picture
+      if (req.files.profilePicture && req.files.profilePicture[0]) {
+        // Delete old picture if it exists
+        if (user.profilePicture) {
+          const oldPublicId = user.profilePicture.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1] || user.profilePicture.split('upload/')[1]?.split('.')[0];
+          if (oldPublicId) deleteUploadedFile(oldPublicId, 'image').catch(err => console.error('Deletion error:', err));
+        }
+
+        const file = req.files.profilePicture[0];
+        setOperations.profilePicture = file.url;
+        setOperations.profilePictureProvider = file.provider;
+      }
+
+      // Contract PDF
+      if (req.files.contractPdf && req.files.contractPdf[0]) {
+        // Delete old contract if it exists
+        if (user.contractPdf) {
+          const oldPublicId = user.contractPdf.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1] || user.contractPdf.split('upload/')[1]?.split('.')[0];
+          if (oldPublicId) deleteUploadedFile(oldPublicId, 'raw').catch(err => console.error('Deletion error:', err));
+        }
+
+        const file = req.files.contractPdf[0];
+        setOperations.contractPdf = file.url;
+        setOperations.contractPdfProvider = file.provider;
       }
       
-      if (req.uploadedFiles.residencePhoto) setOperations['documents.residence'] = req.uploadedFiles.residencePhoto;
-      if (req.uploadedFiles.licensePhoto) setOperations['documents.license'] = req.uploadedFiles.licensePhoto;
-      if (req.uploadedFiles.idPhoto) setOperations['documents.identity'] = req.uploadedFiles.idPhoto;
+      // Single fields (residence, license, identity)
+      if (req.files.residencePhoto && req.files.residencePhoto[0]) {
+        if (user.documents?.residence) {
+          const oldPublicId = user.documents.residence.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+          if (oldPublicId) deleteUploadedFile(oldPublicId, 'image').catch(err => console.error('Deletion error:', err));
+        }
+        setOperations['documents.residence'] = req.files.residencePhoto[0].url;
+      }
+      
+      if (req.files.licensePhoto && req.files.licensePhoto[0]) {
+        if (user.documents?.license) {
+          const oldPublicId = user.documents.license.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+          if (oldPublicId) deleteUploadedFile(oldPublicId, 'image').catch(err => console.error('Deletion error:', err));
+        }
+        setOperations['documents.license'] = req.files.licensePhoto[0].url;
+      }
+
+      if (req.files.idPhoto && req.files.idPhoto[0]) {
+        if (user.documents?.identity) {
+          const oldPublicId = user.documents.identity.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+          if (oldPublicId) deleteUploadedFile(oldPublicId, 'image').catch(err => console.error('Deletion error:', err));
+        }
+        setOperations['documents.identity'] = req.files.idPhoto[0].url;
+      }
       
       // Handle Multiple Files (Append)
-      if (req.files && req.files.otherFiles) {
-         const newFiles = req.files.otherFiles.map(file => ({
-           name: file.originalname,
-           url: file.cloudinaryUrl
-         }));
-         
-         // Use $push to add new files
-         updateOperations['$push'] = { 'documents.files': { $each: newFiles } };
+      if (req.files.otherFiles) {
+        const newFiles = req.files.otherFiles.map(file => ({
+          name: file.originalname,
+          url: file.url,
+          provider: file.provider
+        }));
+        
+        // Use $push to add new files
+        updateOperations['$push'] = { 'documents.files': { $each: newFiles } };
       }
+    }
+
+    // ✅ Handle Explicit Removals (flags)
+    const userForRemoval = await User.findById(req.params.id);
+    if (userForRemoval) {
+      if (req.body.remove_profilePicture === 'true' && userForRemoval.profilePicture) {
+        const oldPublicId = userForRemoval.profilePicture.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+        if (oldPublicId) deleteUploadedFile(oldPublicId, 'image').catch(err => console.error('Deletion error:', err));
+      }
+      if (req.body.remove_contractPdf === 'true' && userForRemoval.contractPdf) {
+        const oldPublicId = userForRemoval.contractPdf.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+        if (oldPublicId) deleteUploadedFile(oldPublicId, 'raw').catch(err => console.error('Deletion error:', err));
+      }
+      // ... (can add more for residence, license etc)
     }
 
     // ✅ Handle Additional Files Removal (Pull from array)
@@ -210,15 +285,16 @@ export const updateUser = async (req, res) => {
     // Actually, usually you wrap everything in $set if you use any $ operator.
     
     // Let's safe-guard:
-    // Move all non-$ keys to $set
-    updateOperations['$set'] = { ...setOperations };
-    
-    // Also move original req.body fields (text) to $set if they are not there
+    // 1. Move original req.body fields (text) to $set
+    updateOperations['$set'] = {};
     Object.keys(req.body).forEach(key => {
-        if (key !== 'documents' && key !== 'password') {
+        if (key !== 'documents' && key !== 'password' && !key.startsWith('remove_')) {
             updateOperations['$set'][key] = req.body[key];
         }
     });
+
+    // 2. Overlay setOperations (Files) - This ensures files take precedence over req.body text
+    Object.assign(updateOperations['$set'], setOperations);
 
     const user = await User.findByIdAndUpdate(
       req.params.id,
@@ -269,6 +345,22 @@ export const deleteUser = async (req, res) => {
         $inc: { totalWorkers: -1 }
       });
     }
+
+    // Delete all associated files from storage
+    const filesToDelete = [];
+    if (user.profilePicture) filesToDelete.push({ id: user.profilePicture, type: 'image' });
+    if (user.contractPdf) filesToDelete.push({ id: user.contractPdf, type: 'raw' });
+    if (user.documents?.residence) filesToDelete.push({ id: user.documents.residence, type: 'image' });
+    if (user.documents?.license) filesToDelete.push({ id: user.documents.license, type: 'image' });
+    if (user.documents?.identity) filesToDelete.push({ id: user.documents.identity, type: 'image' });
+    if (user.documents?.files) {
+      user.documents.files.forEach(f => filesToDelete.push({ id: f.url, type: 'raw' }));
+    }
+
+    filesToDelete.forEach(file => {
+      const publicId = file.id.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1];
+      if (publicId) deleteUploadedFile(publicId, file.type).catch(err => console.error('Deletion error:', err));
+    });
 
     await user.deleteOne();
 

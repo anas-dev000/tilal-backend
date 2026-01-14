@@ -148,7 +148,6 @@ export const uploadFields = (fields, folder = "workers") => [
 
       // req.files is an object where key is fieldname and value is array of files
       const uploadPromises = [];
-
       Object.keys(req.files).forEach((fieldName) => {
         req.files[fieldName].forEach((file) => {
           uploadPromises.push(
@@ -156,35 +155,19 @@ export const uploadFields = (fields, folder = "workers") => [
               folder,
               mimetype: file.mimetype,
               filename: file.originalname
-            }).then((result) => ({
-              fieldName,
-              result,
-              originalFile: file
-            }))
+            }).then((result) => {
+              // Directly update the file object in req.files
+              file.url = result.url;
+              file.publicId = result.publicId;
+              file.resourceType = result.resourceType;
+              file.provider = result.provider;
+              return { fieldName, result };
+            })
           );
         });
       });
 
-      const results = await Promise.all(uploadPromises);
-
-      // Initialize an object to store results for easier access
-      req.uploadedFiles = {};
-
-      results.forEach(({ fieldName, result, originalFile }) => {
-        // Attach the URL and details to the file object in req.files[fieldName]
-        const fileIndex = req.files[fieldName].findIndex(f => f.originalname === originalFile.originalname);
-        if (fileIndex !== -1) {
-          req.files[fieldName][fileIndex].cloudinaryUrl = result.url;
-          req.files[fieldName][fileIndex].cloudinaryId = result.publicId;
-          req.files[fieldName][fileIndex].url = result.url;
-          req.files[fieldName][fileIndex].publicId = result.publicId;
-          req.files[fieldName][fileIndex].resourceType = result.resourceType;
-          req.files[fieldName][fileIndex].provider = result.provider;
-        }
-
-        // Also populate a simple key-value map for easier controller usage
-        req.uploadedFiles[fieldName] = result.url;
-      });
+      await Promise.all(uploadPromises);
 
       console.log("✅ All named files uploaded successfully");
       next();

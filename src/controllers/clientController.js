@@ -196,10 +196,10 @@ export const createClient = async (req, res) => {
     }
 
     // ✅ Handle Contract PDF Upload
-    if (req.file && req.file.cloudinaryUrl) {
+    if (req.file && req.file.url) {
       clientData.contractPdf = {
-        url: req.file.cloudinaryUrl,
-        cloudinaryId: req.file.cloudinaryId
+        url: req.file.url,
+        provider: req.file.provider
       };
     }
 
@@ -257,31 +257,25 @@ export const updateClient = async (req, res) => {
     }
 
     // ✅ Handle Contract PDF Upload (Delete Old One)
-    if (req.file && req.file.cloudinaryUrl) {
-      if (client.contractPdf?.cloudinaryId) {
-        try {
-          await deleteFile(client.contractPdf.cloudinaryId, 'raw');
-        } catch (err) {
-          console.error("Failed to delete old contract PDF:", err);
-        }
-      }
-
-      updateData.contractPdf = {
-        url: req.file.cloudinaryUrl,
-        cloudinaryId: req.file.cloudinaryId
-      };
+    if (req.file && req.file.url) {
+       if (client.contractPdf) {
+         const oldUrl = typeof client.contractPdf === 'string' ? client.contractPdf : client.contractPdf.url;
+         const oldPublicId = oldUrl?.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1] || (typeof client.contractPdf !== 'string' ? client.contractPdf.cloudinaryId : null);
+         if (oldPublicId) deleteFile(oldPublicId, 'raw').catch(err => console.error('Deletion error:', err));
+       }
+       updateData.contractPdf = {
+         url: req.file.url,
+         provider: req.file.provider
+       };
     } 
     // ✅ Handle PDF Removal (Explicit flag)
     else if (updateData.remove_contractPdf === 'true') {
-      if (client.contractPdf?.cloudinaryId) {
-        try {
-          await deleteFile(client.contractPdf.cloudinaryId, 'raw');
-          console.log("🗑️ Deleted contract PDF using uploadService");
-        } catch (err) {
-          console.error("Failed to delete contract PDF during removal:", err);
-        }
-      }
-      updateData.contractPdf = null;
+       if (client.contractPdf) {
+         const oldUrl = typeof client.contractPdf === 'string' ? client.contractPdf : client.contractPdf.url;
+         const oldPublicId = oldUrl?.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1] || (typeof client.contractPdf !== 'string' ? client.contractPdf.cloudinaryId : null);
+         if (oldPublicId) deleteFile(oldPublicId, 'raw').catch(err => console.error('Deletion error:', err));
+       }
+       updateData.contractPdf = null;
     }
 
     client = await Client.findByIdAndUpdate(
@@ -353,6 +347,12 @@ export const deleteClient = async (req, res) => {
         success: false,
         message: 'Client not found'
       });
+    }
+
+    if (client.contractPdf) {
+      const oldUrl = typeof client.contractPdf === 'string' ? client.contractPdf : client.contractPdf.url;
+      const oldPublicId = oldUrl?.split(`${process.env.LOCAL_UPLOAD_PATH || 'uploads'}/`)[1] || (typeof client.contractPdf !== 'string' ? client.contractPdf.cloudinaryId : null);
+      if (oldPublicId) deleteFile(oldPublicId, 'raw').catch(err => console.error('Deletion error:', err));
     }
 
     await client.deleteOne();
