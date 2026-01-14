@@ -125,6 +125,7 @@ app.use(`/api/${API_VERSION}/invoices`, invoiceRoutes);
 // ===============================
 // Health Check
 // ===============================
+app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
     status: "OK",
@@ -132,7 +133,7 @@ app.use(`/api/${API_VERSION}/invoices`, invoiceRoutes);
   });
 });
 
-app.get("/health/db", (req, res) => {
+app.get("/health/db", async (req, res) => {
   const mongoose = await import("mongoose"); // dynamic import to ensure access
   const state = mongoose.default?.connection?.readyState;
   const states = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
