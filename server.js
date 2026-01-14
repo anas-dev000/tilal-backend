@@ -13,26 +13,27 @@ const PORT = process.env.PORT || 3000;
 const httpServer = http.createServer(app);
 
 const startServer = async () => {
-  try {
+  // Start listening IMMEDIATELY to avoid Hostinger 503
+  httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ Server listening on port ${PORT} in ${process.env.NODE_ENV || "development"} mode`);
+    
+    // Connect to database in background
     console.log("⏳ Connecting to database...");
-    await connectDB();
-    console.log("✅ Database connection established.");
-
-    // Initialize socket.io with the server
-    try {
-      initSocket(httpServer);
-      console.log("🔌 Socket.io initialized");
-    } catch (socketError) {
-      console.warn("⚠️ Socket.io initialization failed:", socketError.message);
-    }
-
-    httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`✅ Server running on port ${PORT} in ${process.env.NODE_ENV || "development"} mode`);
-    });
-  } catch (error) {
-    console.error("❌ Failed to start server:", error);
-    process.exit(1);
-  }
+    connectDB()
+      .then(() => {
+        console.log("✅ Database connection established.");
+        try {
+          initSocket(httpServer);
+          console.log("🔌 Socket.io initialized");
+        } catch (socketError) {
+          console.warn("⚠️ Socket.io initialization failed:", socketError.message);
+        }
+      })
+      .catch((error) => {
+        console.error("❌ Failed to connect to database:", error.message);
+        // Do NOT process.exit(1) here, so we can still access /health/db to debug
+      });
+  });
 };
 
 // Graceful shutdown
