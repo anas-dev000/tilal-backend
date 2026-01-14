@@ -33,7 +33,15 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors({
+  origin: true, // Reflection: automatically sets Access-Control-Allow-Origin to the request origin
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With"]
+}));
+
+// Handle preflight
+app.options("*", cors());
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
 app.use(mongoSanitize());
 app.use(express.json({ limit: "10mb" }));
