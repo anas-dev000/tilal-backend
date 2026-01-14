@@ -2,9 +2,17 @@ import mongoose from 'mongoose';
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      // These options are no longer needed in Mongoose 6+
-      // but keeping them for compatibility
+    const uri = process.env.MONGODB_URI;
+    if (!uri) {
+      throw new Error("MONGODB_URI environment variable is missing!");
+    }
+    // Log masked URI for debugging (e.g. mongodb+srv://user:****@cluster...)
+    const maskedUri = uri.replace(/:([^:@]+)@/, ":****@");
+    console.log(`Attempting to connect to MongoDB at: ${maskedUri}`);
+
+    const conn = await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000, // Fail after 5s if IP is blocked or network is down
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
     });
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);
