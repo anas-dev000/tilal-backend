@@ -6,6 +6,8 @@ import helmet from "helmet";
 import morgan from "morgan";
 import compression from "compression";
 import mongoSanitize from "express-mongo-sanitize";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import connectDB from "./src/config/database.js";
 import errorHandler from "./src/middleware/errorHandler.js";
@@ -27,11 +29,8 @@ import siteRoutes from "./src/routes/siteRoutes.js";
 import accountantRoutes from "./src/routes/accountantRoutes.js";
 import invoiceRoutes from "./src/routes/invoiceRoutes.js";
 
-import path from "path";
-import { fileURLToPath } from "url";
-
 // ===============================
-// Load Env (Absolute Path for Hostinger)
+// Load Env
 // ===============================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,13 +70,7 @@ app.use(
   })
 );
 
-// Explicit OPTIONS handler for Hostinger Preflight issues
-app.options("*", (req, res) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  res.sendStatus(204);
-});
+app.options("*", cors());
 
 // ===============================
 // Security & Middlewares
@@ -145,7 +138,7 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/health/db", async (req, res) => {
-  const mongoose = await import("mongoose");
+  const mongoose = await import("mongoose"); // dynamic import to ensure access
   const state = mongoose.default?.connection?.readyState;
   const states = { 0: "disconnected", 1: "connected", 2: "connecting", 3: "disconnecting" };
   
@@ -153,19 +146,7 @@ app.get("/health/db", async (req, res) => {
     success: state === 1,
     state: states[state] || "unknown",
     envVarLoaded: !!process.env.MONGODB_URI,
-    socketActive: !!mongoose.default?.connection?.host,
-    nodeEnv: process.env.NODE_ENV,
-    port: PORT,
-    apiVersion: API_VERSION,
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get(`/api/${API_VERSION}/health`, (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "API Prefix Working",
-    apiVersion: API_VERSION
+    socketActive: !!mongoose.default?.connection?.host
   });
 });
 
