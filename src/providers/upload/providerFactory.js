@@ -8,10 +8,12 @@
  */
 import CloudinaryProvider from './CloudinaryProvider.js';
 import LocalProvider from './LocalProvider.js';
+import HttpStorageProvider from './HttpStorageProvider.js';
 
 // Singleton instances for reuse
 let cloudinaryInstance = null;
 let localInstance = null;
+let httpStorageInstance = null;
 
 /**
  * Get the configured upload provider
@@ -23,6 +25,13 @@ export const getUploadProvider = () => {
   console.log(`📦 Using upload provider: ${provider}`);
   
   switch (provider.toLowerCase()) {
+    case 'http_storage':
+    case 'remote':
+      if (!httpStorageInstance) {
+        httpStorageInstance = new HttpStorageProvider();
+      }
+      return httpStorageInstance;
+      
     case 'local':
       if (!localInstance) {
         localInstance = new LocalProvider();
