@@ -1,13 +1,23 @@
-import http from "http";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+// Load .env IMMEDIATELY before any other imports
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, ".env");
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+} else {
+  dotenv.config(); 
+}
+
+import http from "http";
 import app from "./app.js";
 import connectDB from "./src/config/database.js";
 import { initSocket } from "./src/config/socket.js";
-
-// Load .env only in development
-if (process.env.NODE_ENV !== "production") {
-  dotenv.config();
-}
 
 const PORT = process.env.PORT || 3000;
 const httpServer = http.createServer(app);
@@ -31,7 +41,6 @@ const startServer = async () => {
       })
       .catch((error) => {
         console.error("❌ Failed to connect to database:", error.message);
-        // Do NOT process.exit(1) here, so we can still access /health/db to debug
       });
   });
 };
