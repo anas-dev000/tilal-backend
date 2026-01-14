@@ -1,19 +1,21 @@
 import mongoose from 'mongoose';
 
+const mongoUri = process.env.MONGODB_URI;
+
 const connectDB = async () => {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) {
-    console.error("❌ MONGODB_URI is missing. Check your .env file or Hostinger variables.");
-    return;
+  if (!mongoUri) {
+    console.error("❌ MONGODB_URI is not defined in environment variables");
+    throw new Error("MONGODB_URI is missing");
   }
 
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 5000,
+    await mongoose.connect(mongoUri, {
+      dbName: process.env.DB_NAME || undefined,
     });
-    console.log("✅ MongoDB Connected");
+    console.log("✅ MongoDB connected");
   } catch (error) {
-    console.error(`❌ MongoDB Connection Error: ${error.message}`);
+    console.error("❌ MongoDB connection error:", error.message);
+    throw error;
   }
 };
 
