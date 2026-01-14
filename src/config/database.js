@@ -1,17 +1,19 @@
 import mongoose from 'mongoose';
 
 const connectDB = async () => {
-  try {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error("MONGODB_URI is missing!");
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    console.error("❌ MONGODB_URI IS MISSING IN ENVIRONMENT");
+    return;
+  }
 
+  try {
+    // Basic, clean connection
     await mongoose.connect(uri);
-    console.log("✅ MongoDB Connected");
+    console.log("✅ MongoDB Connected Successfully");
   } catch (error) {
-    console.error(`❌ MongoDB Error: ${error.message}`);
-    // Delay slightly to let the server start even if DB fails initially
-    // or just throw if you want the start script to fail
-    throw error;
+    console.error(`❌ MongoDB Connection Error: ${error.message}`);
+    // We don't throw here to prevent process crash, allowing the server to stay up (giving 503 avoidance)
   }
 };
 
