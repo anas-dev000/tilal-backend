@@ -27,7 +27,8 @@ const connectDB = async () => {
 
   } catch (error) {
     console.error(`❌ Error connecting to MongoDB: ${error.message}`);
-    process.exit(1);
+    // Do NOT exit process here, let server.js handle it to avoid 503s
+    throw error;
   }
 };
 
