@@ -1,5 +1,15 @@
 import dotenv from "dotenv";
-dotenv.config();
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
+// Get absolute path to .env
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, ".env");
+
+// Load .env with absolute path
+dotenv.config({ path: envPath });
 
 import express from "express";
 import http from "http";
@@ -30,19 +40,18 @@ import invoiceRoutes from "./src/routes/invoiceRoutes.js";
 
 const app = express();
 const server = http.createServer(app);
-const PORT = Number(process.env.PORT) || 5000;
+const PORT = Number(process.env.PORT) || 3000;
 
-// CORS - Robust Setup
+// CORS
 app.use(cors({
   origin: true,
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With"]
 }));
-
 app.options("*", cors());
 
-// Security & Optimization
+// Security
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
 app.use(mongoSanitize());
 app.use(express.json({ limit: "15mb" }));
@@ -53,10 +62,8 @@ if (process.env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
 
-// Static files
 app.use("/uploads", express.static("uploads"));
 
-// API Routes
 const API_VERSION = process.env.API_VERSION || "v1";
 const baseRoute = `/api/${API_VERSION}`;
 
@@ -80,33 +87,28 @@ app.get("/health/db", async (req, res) => {
   const mongoose = (await import("mongoose")).default;
   const state = mongoose.connection.readyState;
   const states = ["disconnected", "connected", "connecting", "disconnecting"];
+  
   res.json({
     success: state === 1,
     state: states[state],
     envVarLoaded: !!process.env.MONGODB_URI,
-    port: PORT
+    envPathChecked: envPath,
+    envFileExists: fs.existsSync(envPath),
+    cwd: process.cwd(),
+    port: PORT,
+    nodeEnv: process.env.NODE_ENV
   });
 });
 
 app.get("/", (req, res) => res.json({ success: true, message: "Garden API Running", version: API_VERSION }));
 
-// Error Handling
 app.use(errorHandler);
 
-// Start Server (Linear & Immediate)
+// Start Server
 server.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
-    
-    // Connect to Database after server is up to avoid 503
     connectDB().then(() => {
-        try {
-            initSocket(server);
-            console.log("🔌 Socket.io initialized");
-        } catch (e) {
-            console.warn("⚠️ Socket.io initialization failed:", e.message);
-        }
-    }).catch(err => {
-        console.error("❌ Failed to connect to DB after startup:", err.message);
+        try { initSocket(server); } catch (e) {}
     });
 });
 

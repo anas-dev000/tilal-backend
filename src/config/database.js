@@ -3,17 +3,17 @@ import mongoose from 'mongoose';
 const connectDB = async () => {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
-    console.error("❌ MONGODB_URI IS MISSING IN ENVIRONMENT");
+    console.error("❌ MONGODB_URI is missing. Check your .env file or Hostinger variables.");
     return;
   }
 
   try {
-    // Basic, clean connection
-    await mongoose.connect(uri);
-    console.log("✅ MongoDB Connected Successfully");
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+    });
+    console.log("✅ MongoDB Connected");
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    // We don't throw here to prevent process crash, allowing the server to stay up (giving 503 avoidance)
   }
 };
 
