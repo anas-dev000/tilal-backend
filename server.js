@@ -181,12 +181,12 @@ const startServer = async () => {
       console.warn("⚠️ Socket.io disabled:", e.message);
     }
 
-    try {
-      await startCronJobs();
-      console.log("⏰ Cron jobs started");
-    } catch (e) {
-      console.warn("⚠️ Cron jobs failed:", e.message);
-    }
+    // try {
+    //   await startCronJobs();
+    //   console.log("⏰ Cron jobs started");
+    // } catch (e) {
+    //   console.warn("⚠️ Cron jobs failed:", e.message);
+    // }
 
   } catch (error) {
     console.error("❌ Server failed to start:", error);
