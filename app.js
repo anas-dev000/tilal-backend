@@ -29,10 +29,19 @@ const app = express();
 
 // Global Middlewares
 app.use(cors({
-  origin: true,
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    // Allow all origins for now to be safe with Vercel deployment aliases
+    // or you can restrict to specific domains if needed.
+    return callback(null, true);
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With"]
+  allowedHeaders: ["Content-Type", "Authorization", "Accept", "X-Requested-With", "Origin"],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
 app.options("*", cors());
 
